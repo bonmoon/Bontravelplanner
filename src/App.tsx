@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEven
 import { applyOptimizedDays, commandTrip, optimizeCity, parseExpenses, summarizePlace, testAssistantConnection, type OptimizedDay } from "./assistant";
 import { CityCard, DaySection, Modal, PlaceRow, TicketCard, categoryIcon } from "./components";
 import { exportElementPng, exportJson, exportTripHtml } from "./exporters";
+import { downloadTripPackageTemplate, importTripPackage } from "./bulkPackage";
+import { cityDateRange, looseDateToIso, sortCitiesByDate } from "./dates";
 import { appleMapsUrl, appleRouteUrl, googleMapsUrl, googleRouteUrl } from "./maps";
 import { sampleDocument } from "./sample";
 import { loadAssistantSettings, loadDocument, requestPersistentStorage, saveAssistantSettings, saveDocument } from "./storage";
@@ -53,6 +55,11 @@ function App() {
   const [editingTicketId, setEditingTicketId] = useState("");
   const exportRef = useRef<HTMLDivElement>(null);
   const importRef = useRef<HTMLInputElement>(null);
+  const bulkImportRef = useRef<HTMLInputElement>(null);
+  const [introOpen, setIntroOpen] = useState(() => {
+    try { return window.sessionStorage.getItem("bontrip-opening-seen") !== "1"; }
+    catch { return true; }
+  });
 
   const trip = document.trips.find((item) => item.id === document.activeTripId) || document.trips[0];
   const city = trip?.cities.find((item) => item.id === activeCityId) || trip?.cities[0];
@@ -332,9 +339,27 @@ function App() {
     }
   }
 
+  async function importBulkPackage(file: File) {
+    try {
+      const imported = await importTripPackage(file);
+      if (!window.confirm(`用“${imported.title}”覆盖当前旅行？当前旅行的城市、地点、票据和账目都会被替换。`)) return;
+      const replacement = { ...imported, id: trip.id };
+      setDocument((current) => ({ ...current, trips: current.trips.map((item) => item.id === current.activeTripId ? replacement : item) }));
+      setActiveCityId(replacement.cities[0].id);
+      setView("trip");
+      showToast("素材包已经整理并覆盖当前旅行");
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "素材包无法读取");
+    } finally {
+      if (bulkImportRef.current) bulkImportRef.current.value = "";
+    }
+  }
+
   if (!trip) return <div className="loading-screen">正在打开旅卡排版室…</div>;
 
   return (
+    <>
+    {introOpen && <OpeningIntro onDone={() => setIntroOpen(false)} />}
     <div className="app-shell">
       <Sidebar view={view} onView={setView} onNewTrip={() => setModal("trip")} />
       <main className="main-shell">
@@ -369,14 +394,15 @@ function App() {
           {view === "tickets" && <TicketsView trip={trip} onAdd={() => setModal("ticket")} onEdit={(id) => { setEditingTicketId(id); setModal("editTicket"); }} />}
           {view === "expenses" && <ExpensesView trip={trip} onAdd={() => setModal("expense")} onRemove={(id) => updateTrip((current) => ({ ...current, expenses: current.expenses.filter((item) => item.id !== id) }))} />}
           {view === "assistant" && <AssistantView trip={trip} draft={chatDraft} onDraft={setChatDraft} onSend={sendChat} busy={busy === "chat"} onOptimize={prepareOptimization} onExpense={() => setModal("expense")} />}
-          {view === "settings" && <SettingsView settings={settings} onSettings={setSettings} onSave={saveSettings} onBackup={() => exportJson(document)} onImport={() => importRef.current?.click()} onPersist={async () => showToast(await requestPersistentStorage() ? "这台设备会尽量长久保留旅行资料" : "浏览器会继续自动保存旅行资料")} />}
+          {view === "settings" && <SettingsView settings={settings} onSettings={setSettings} onSave={saveSettings} onBackup={() => exportJson(document)} onImport={() => importRef.current?.click()} onBulkImport={() => bulkImportRef.current?.click()} onDownloadTemplate={downloadTripPackageTemplate} onPersist={async () => showToast(await requestPersistentStorage() ? "这台设备会尽量长久保留旅行资料" : "浏览器会继续自动保存旅行资料")} />}
         </div>
       </main>
       <MobileNav view={view} onView={setView} />
       <input ref={importRef} className="hidden" type="file" accept="application/json" onChange={(event) => event.target.files?.[0] && importBackup(event.target.files[0])} />
+      <input ref={bulkImportRef} className="hidden" type="file" accept=".zip,application/zip" onChange={(event) => event.target.files?.[0] && void importBulkPackage(event.target.files[0])} />
       {modal === "trip" && <NewTripModal onClose={() => setModal("none")} onCreate={(created) => { setDocument((current) => ({ ...current, trips: [created, ...current.trips], activeTripId: created.id })); setActiveCityId(created.cities[0].id); setView("trip"); setModal("none"); }} />}
-      {modal === "city" && <NewCityModal onClose={() => setModal("none")} onCreate={(created) => { updateTrip((current) => ({ ...current, cities: [...current.cities, created] })); setActiveCityId(created.id); setModal("none"); }} />}
-      {modal === "editCity" && city && <NewCityModal initial={city} onClose={() => setModal("none")} onCreate={(edited) => { updateTrip((current) => ({ ...current, cities: current.cities.map((item) => item.id === city.id ? { ...edited, id: city.id, cover: city.cover, days: city.days } : item) })); setModal("none"); showToast("城市卡已经更新"); }} />}
+      {modal === "city" && <NewCityModal tripStartDate={trip.startDate} onClose={() => setModal("none")} onCreate={(created) => { updateTrip((current) => ({ ...current, cities: sortCitiesByDate([...current.cities, created], current.startDate) })); setActiveCityId(created.id); setModal("none"); }} />}
+      {modal === "editCity" && city && <NewCityModal tripStartDate={trip.startDate} initial={city} onClose={() => setModal("none")} onCreate={(edited) => { updateTrip((current) => ({ ...current, cities: sortCitiesByDate(current.cities.map((item) => item.id === city.id ? { ...edited, id: city.id, cover: city.cover, days: city.days } : item), current.startDate) })); setModal("none"); showToast("城市卡已经按日期更新顺序"); }} />}
       {modal === "place" && city && <NewPlaceModal onClose={() => setModal("none")} onCreate={(created) => { updateCity((current) => {
         if (!current.days.length) return { ...current, days: [{ id: uid("day"), date: "Day 1", weekday: "", title: "抵达与散步", places: [created] }] };
         return { ...current, days: current.days.map((day) => day.id === modalDayId ? { ...day, places: [...day.places, created] } : day) };
@@ -388,7 +414,79 @@ function App() {
       <FloatingAssistant open={assistantOpen} onOpen={() => setAssistantOpen(true)} onClose={() => setAssistantOpen(false)} trip={trip} draft={chatDraft} onDraft={setChatDraft} onSend={sendChat} busy={busy === "chat"} onTicket={() => setModal("ticket")} onExpense={() => setModal("expense")} />
       <div className={`toast ${toast ? "show" : ""}`}>{toast}</div>
     </div>
+    </>
   );
+}
+
+function OpeningIntro({ onDone }: { onDone: () => void }) {
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const [running, setRunning] = useState(false);
+  const [leaving, setLeaving] = useState(false);
+  const [muted, setMuted] = useState(false);
+  const [soundMessage, setSoundMessage] = useState("");
+
+  function rememberAndClose() {
+    try { window.sessionStorage.setItem("bontrip-opening-seen", "1"); } catch { /* private mode */ }
+    const audio = audioRef.current;
+    if (audio) {
+      audio.pause();
+      audio.currentTime = 0;
+    }
+    onDone();
+  }
+
+  useEffect(() => {
+    if (!running) return;
+    const leaveTimer = window.setTimeout(() => setLeaving(true), 4300);
+    const doneTimer = window.setTimeout(rememberAndClose, 5200);
+    return () => {
+      window.clearTimeout(leaveTimer);
+      window.clearTimeout(doneTimer);
+    };
+  }, [running]);
+
+  async function beginJourney() {
+    if (running) return;
+    setRunning(true);
+    if (!muted && audioRef.current) {
+      audioRef.current.volume = 0.58;
+      try { await audioRef.current.play(); }
+      catch { setSoundMessage("轻触右上角声音按钮播放 BGM"); }
+    }
+  }
+
+  async function toggleSound() {
+    const nextMuted = !muted;
+    setMuted(nextMuted);
+    if (!audioRef.current) return;
+    audioRef.current.muted = nextMuted;
+    if (!nextMuted && running) {
+      try { await audioRef.current.play(); setSoundMessage(""); }
+      catch { setSoundMessage("当前浏览器暂未允许播放"); }
+    }
+  }
+
+  return <section className={`opening-intro export-hide ${running ? "is-running" : ""} ${leaving ? "is-leaving" : ""}`} aria-label="旅卡排版室开场">
+    <audio ref={audioRef} src="./assets/paws-and-passport.mp3" preload="auto" />
+    <div className="opening-stamp opening-stamp-a">BON<br />VOYAGE</div>
+    <div className="opening-stamp opening-stamp-b">PAWS<br />ABROAD</div>
+    <div className="opening-route" aria-hidden="true"><i /><i /><i /><i /></div>
+    <button className="opening-sound" onClick={() => void toggleSound()} aria-label={muted ? "打开开场音乐" : "关闭开场音乐"}>{muted ? "♪̸" : "♪"}</button>
+    <button className="opening-skip" onClick={rememberAndClose}>跳过</button>
+    <div className="opening-copy">
+      <span>PAWS &amp; PASSPORT</span>
+      <h1>旅卡排版室</h1>
+      <p>猫爪已经盖章，准备出发。</p>
+    </div>
+    <div className="opening-cat-wrap">
+      <div className="opening-sun" />
+      <img src="./assets/bontrip-travel.png" alt="带着护照出发的旅行猫咪" />
+      <div className="opening-ticket"><small>BOARDING PASS</small><strong>下一站 · 好天气</strong><b>✦</b></div>
+    </div>
+    {!running && <button className="opening-start" onClick={() => void beginJourney()}><span>带我出发</span><b>→</b></button>}
+    {running && <div className="opening-progress" aria-label="正在出发"><i /></div>}
+    {soundMessage && <p className="opening-sound-message" aria-live="polite">{soundMessage}</p>}
+  </section>;
 }
 
 function Sidebar({ view, onView, onNewTrip }: { view: ViewName; onView: (value: ViewName) => void; onNewTrip: () => void }) {
@@ -448,7 +546,7 @@ function FloatingAssistant({ open, onOpen, onClose, trip, draft, onDraft, onSend
   </aside>;
 }
 
-function SettingsView({ settings, onSettings, onSave, onBackup, onImport, onPersist }: { settings: AssistantSettings; onSettings: (value: AssistantSettings) => void; onSave: (event: FormEvent) => void; onBackup: () => void; onImport: () => void; onPersist: () => void }) {
+function SettingsView({ settings, onSettings, onSave, onBackup, onImport, onBulkImport, onDownloadTemplate, onPersist }: { settings: AssistantSettings; onSettings: (value: AssistantSettings) => void; onSave: (event: FormEvent) => void; onBackup: () => void; onImport: () => void; onBulkImport: () => void; onDownloadTemplate: () => void; onPersist: () => void }) {
   const [connectionStatus, setConnectionStatus] = useState("");
   const [testingConnection, setTestingConnection] = useState(false);
   async function testConnection() {
@@ -461,20 +559,22 @@ function SettingsView({ settings, onSettings, onSave, onBackup, onImport, onPers
     <header className="page-intro"><span className="eyebrow">PREFERENCES</span><h2>把旅卡留在自己的设备里</h2><p>连接信息和旅行资料都只保存在当前浏览器。</p></header>
     <div className="settings-grid">
       <form className="settings-card" onSubmit={onSave}><header><span>✦</span><div><h3>DeepSeek 旅行助手</h3><p>聊天可以直接写入城市、地点、票据与账目。</p></div></header><label><span>服务地址</span><input value={settings.baseUrl} onChange={(event) => onSettings({ ...settings, baseUrl: event.target.value })} /></label><label><span>访问密钥</span><input type="password" value={settings.apiKey} onChange={(event) => onSettings({ ...settings, apiKey: event.target.value })} placeholder="••••••••••••" /></label><label><span>模型</span><select value={settings.model} onChange={(event) => onSettings({ ...settings, model: event.target.value })}><option value="deepseek-v4-flash">V4 Flash · 日常规划</option><option value="deepseek-v4-pro">V4 Pro · 精细规划</option></select></label><div className="settings-connection-actions"><button className="primary-button">保存连接</button><button type="button" onClick={testConnection} disabled={testingConnection}>{testingConnection ? "检查中…" : "测试连接"}</button></div>{connectionStatus && <p className={connectionStatus.startsWith("连接成功") ? "connection-status success" : "connection-status"}>{connectionStatus}</p>}</form>
-      <section className="settings-card"><header><span>⌂</span><div><h3>旅行资料</h3><p>带走完整备份，换设备时也能继续。</p></div></header><div className="settings-actions"><button onClick={onBackup}>导出完整备份</button><button onClick={onImport}>导入旅行备份</button><button onClick={onPersist}>在这台设备长久保留</button></div></section>
+      <section className="settings-card"><header><span>⌂</span><div><h3>旅行资料</h3><p>备份整个工作台，或用素材包快速换成一趟新旅行。</p></div></header><div className="settings-actions"><button onClick={onBackup}>导出完整备份</button><button onClick={onImport}>导入旅行备份</button><button onClick={onDownloadTemplate}>下载素材包模板</button><button onClick={onBulkImport}>导入素材包 · 覆盖当前旅行</button><button onClick={onPersist}>在这台设备长久保留</button></div></section>
     </div>
   </section>;
 }
 
 function NewTripModal({ onClose, onCreate }: { onClose: () => void; onCreate: (trip: Trip) => void }) {
   const [cover, setCover] = useState("");
-  function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const data = new FormData(event.currentTarget); const cityId = uid("city"); const created: Trip = { id: uid("trip"), title: String(data.get("title") || "新的旅行"), startDate: String(data.get("start") || "待定"), endDate: String(data.get("end") || "待定"), subtitle: String(data.get("subtitle") || "慢慢收集沿途的小事"), cover: cover || undefined, updatedAt: new Date().toISOString(), track: { title: "A Walk", artist: "Tycho", reason: "适合一段刚刚开始的旅行。", url: "https://music.youtube.com/search?q=A%20Walk%20Tycho" }, cities: [{ id: cityId, name: String(data.get("city") || "第一站"), englishName: "First stop", dates: "待安排", note: "给这座城市留一点空白。", color: "#eadccf", days: [{ id: uid("day"), date: "Day 1", weekday: "", title: "抵达与散步", places: [] }] }], tickets: [], expenses: [], chats: [{ id: uid("chat"), role: "assistant", content: "旅行已经建好了。先放进几个想去的地方吧。", createdAt: new Date().toISOString() }] }; onCreate(created); }
+  function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const data = new FormData(event.currentTarget); const cityId = uid("city"); const startDate = String(data.get("start") || ""); const endDate = String(data.get("end") || startDate); const created: Trip = { id: uid("trip"), title: String(data.get("title") || "新的旅行"), startDate: startDate || "待定", endDate: endDate || "待定", subtitle: String(data.get("subtitle") || "慢慢收集沿途的小事"), cover: cover || undefined, updatedAt: new Date().toISOString(), track: { title: "", artist: "", reason: "", url: "" }, cities: [{ id: cityId, name: String(data.get("city") || "第一站"), englishName: "First stop", startDate, endDate: startDate, dates: cityDateRange(startDate, startDate), note: "给这座城市留一点空白。", color: "#eadccf", days: [{ id: uid("day"), date: startDate || "Day 1", weekday: "", title: "抵达与散步", places: [] }] }], tickets: [], expenses: [], chats: [{ id: uid("chat"), role: "assistant", content: "旅行已经建好了。先放进几个想去的地方吧。", createdAt: new Date().toISOString() }] }; onCreate(created); }
   return <Modal title="新建一段旅行" eyebrow="NEW JOURNEY" onClose={onClose}><form className="modal-form" onSubmit={submit}><ImagePicker value={cover} label="旅行封面" onChange={setCover} /><label><span>旅行名称</span><input name="title" placeholder="欧洲之行" required /></label><div className="form-row"><label><span>出发</span><input name="start" type="date" /></label><label><span>回来</span><input name="end" type="date" /></label></div><label><span>第一座城市</span><input name="city" placeholder="布鲁塞尔" required /></label><label><span>这趟旅行</span><input name="subtitle" placeholder="城市、山与慢火车" /></label><footer><button type="button" onClick={onClose}>取消</button><button className="primary-button">开始收集</button></footer></form></Modal>;
 }
 
-function NewCityModal({ initial, onClose, onCreate }: { initial?: City; onClose: () => void; onCreate: (city: City) => void }) {
-  function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const data = new FormData(event.currentTarget); const city: City = { id: initial?.id || uid("city"), name: String(data.get("name")), englishName: String(data.get("english") || "New city"), dates: String(data.get("dates") || "待安排"), note: String(data.get("note") || "在这里留一点空白给偶遇。"), color: String(data.get("color") || "#e7dfc9"), cover: initial?.cover, days: initial?.days || [{ id: uid("day"), date: "Day 1", weekday: "", title: "抵达与散步", places: [] }] }; onCreate(city); }
-  return <Modal title={initial ? "编辑城市卡" : "添加一座城市"} eyebrow={initial ? "EDIT STOP" : "NEXT STOP"} onClose={onClose}><form className="modal-form" onSubmit={submit}><div className="form-row"><label><span>城市</span><input name="name" required placeholder="维也纳" defaultValue={initial?.name} /></label><label><span>英文名</span><input name="english" placeholder="Vienna" defaultValue={initial?.englishName} /></label></div><label><span>日期</span><input name="dates" placeholder="10.04 – 10.06" defaultValue={initial?.dates} /></label><label><span>城市小记</span><textarea name="note" placeholder="想在这座城市留下什么？" defaultValue={initial?.note} /></label><label><span>卡片颜色</span><input name="color" type="color" defaultValue={initial?.color || "#e7dfc9"} /></label><footer><button type="button" onClick={onClose}>取消</button><button className="primary-button">{initial ? "保存修改" : "放进旅程"}</button></footer></form></Modal>;
+function NewCityModal({ initial, tripStartDate, onClose, onCreate }: { initial?: City; tripStartDate: string; onClose: () => void; onCreate: (city: City) => void }) {
+  const defaultStart = initial?.startDate || looseDateToIso(initial?.dates || "", tripStartDate, 0);
+  const defaultEnd = initial?.endDate || looseDateToIso(initial?.dates || "", tripStartDate, 1) || defaultStart;
+  function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const data = new FormData(event.currentTarget); const startDate = String(data.get("startDate") || ""); const endDate = String(data.get("endDate") || startDate); const city: City = { id: initial?.id || uid("city"), name: String(data.get("name")), englishName: String(data.get("english") || "New city"), startDate, endDate, dates: cityDateRange(startDate, endDate), note: String(data.get("note") || "在这里留一点空白给偶遇。"), color: String(data.get("color") || "#e7dfc9"), cover: initial?.cover, days: initial?.days || [{ id: uid("day"), date: startDate || "Day 1", weekday: "", title: "抵达与散步", places: [] }] }; onCreate(city); }
+  return <Modal title={initial ? "编辑城市卡" : "添加一座城市"} eyebrow={initial ? "EDIT STOP" : "NEXT STOP"} onClose={onClose}><form className="modal-form" onSubmit={submit}><div className="form-row"><label><span>城市</span><input name="name" required placeholder="维也纳" defaultValue={initial?.name} /></label><label><span>英文名</span><input name="english" placeholder="Vienna" defaultValue={initial?.englishName} /></label></div><div className="form-row"><label><span>到达日期</span><input name="startDate" type="date" required defaultValue={defaultStart} /></label><label><span>离开日期</span><input name="endDate" type="date" defaultValue={defaultEnd} /></label></div><label><span>城市小记</span><textarea name="note" placeholder="想在这座城市留下什么？" defaultValue={initial?.note} /></label><label><span>卡片颜色</span><input name="color" type="color" defaultValue={initial?.color || "#e7dfc9"} /></label><footer><button type="button" onClick={onClose}>取消</button><button className="primary-button">{initial ? "保存并重排" : "放进旅程"}</button></footer></form></Modal>;
 }
 
 function NewPlaceModal({ onClose, onCreate }: { onClose: () => void; onCreate: (place: Place) => void }) {

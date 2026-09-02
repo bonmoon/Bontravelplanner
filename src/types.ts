@@ -30,6 +30,8 @@ export interface City {
   id: string;
   name: string;
   englishName: string;
+  startDate?: string;
+  endDate?: string;
   dates: string;
   note: string;
   color: string;
