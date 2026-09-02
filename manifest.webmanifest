@@ -1,0 +1,19 @@
+{
+  "name": "旅卡排版室 · Travel Card Studio",
+  "short_name": "旅卡排版室",
+  "description": "旅行路线、城市卡片、票据与随手账",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f4efe7",
+  "theme_color": "#f4efe7",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "./icons/app-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
