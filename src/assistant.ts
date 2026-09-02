@@ -1,4 +1,4 @@
-import type { AssistantCommandResult, AssistantOperation, AssistantSettings, City, DayPlan, Expense, Place, Track, Trip } from "./types";
+import type { AssistantCommandResult, AssistantOperation, AssistantSettings, City, DayPlan, Expense, Place, Trip } from "./types";
 import { uid } from "./types";
 
 type JsonObject = Record<string, unknown>;
@@ -212,41 +212,8 @@ export async function parseExpenses(settings: AssistantSettings, text: string, c
     }));
 }
 
-export async function suggestTrack(settings: AssistantSettings, trip: Trip): Promise<Track> {
-  const library = settings.musicLibrary.filter((item) => item.enabled);
-  if (library.length) {
-    const content = await ask(settings, [
-      { role: "system", content: `${baseSystem}\n从用户自己的音乐库中选一张最适合当前旅程的歌单。只输出 JSON：{"playlistId":"已有ID","reason":"一句理由"}，不能发明ID。` },
-      { role: "user", content: `旅行：${trip.title}\n路线：${trip.cities.map((city) => city.name).join(" → ")}\n音乐库：${JSON.stringify(library.map((item) => ({ id: item.id, title: item.title, note: item.note })))}` },
-    ], true);
-    const selected = jsonFromText(content);
-    const item = library.find((entry) => entry.id === String(selected.playlistId)) || library[0];
-    return { title: item.title, artist: "YouTube Music Library", reason: String(selected.reason || item.note || "适合这段路上的节奏。"), url: item.url, coverUrl: item.coverUrl, playlistId: item.playlistId };
-  }
-  const content = await ask(
-    settings,
-    [
-      { role: "system", content: `${baseSystem}\n推荐一首确实存在的歌曲。只输出 JSON：{"title":"歌名","artist":"艺人","reason":"一句理由"}` },
-      { role: "user", content: `旅行：${trip.title}\n路线：${trip.subtitle}\n城市气质：${trip.cities.map((city) => city.note).join("；")}\n请选一首主题曲并输出 json。` },
-    ],
-    true,
-  );
-  const result = jsonFromText(content);
-  const title = String(result.title || "A Walk");
-  const artist = String(result.artist || "Tycho");
-  return {
-    title,
-    artist,
-    reason: String(result.reason || "适合一路慢慢听。"),
-    url: settings.musicProvider === "youtube"
-      ? `https://music.youtube.com/search?q=${encodeURIComponent(`${title} ${artist}`)}`
-      : `https://music.apple.com/cn/search?term=${encodeURIComponent(`${title} ${artist}`)}`,
-  };
-}
-
 export async function commandTrip(settings: AssistantSettings, trip: Trip, message: string): Promise<AssistantCommandResult> {
   const itinerary = trip.cities.map((city) => ({ city: city.name, dates: city.dates, note: city.note, days: city.days.map((day) => ({ date: day.date, title: day.title, places: day.places.map((place) => ({ name: place.name, category: place.category, time: place.time, duration: place.duration, locked: !!place.locked })) })) }));
-  const library = settings.musicLibrary.filter((item) => item.enabled).map((item) => ({ id: item.id, title: item.title, note: item.note }));
   const ledger = trip.expenses.map((item) => ({ id: item.id, title: item.title, amount: item.amount, currency: item.currency, date: item.date, category: item.category, city: trip.cities.find((city) => city.id === item.cityId)?.name || "" }));
   const tripYear = trip.startDate.match(/20\d{2}/)?.[0] || trip.endDate.match(/20\d{2}/)?.[0] || String(new Date().getFullYear());
   const today = new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Shanghai" }).format(new Date());
@@ -262,14 +229,13 @@ export async function commandTrip(settings: AssistantSettings, trip: Trip, messa
 {"type":"plan_day","cityName":"已有城市","date":"已有日期","title":"当天路线主题","replace":true,"places":[{"name":"中文名","mapQuery":"官方英文或当地名称, City, Country","category":"景点|美食|交通|住宿|购物","time":"09:00","endTime":"10:30","duration":"1.5小时","summary":"40-70字看点","highlights":["看点1","看点2"]}]}；
 {"type":"add_expense","expense":{"title":"项目","amount":12.5,"currency":"€","category":"交通|餐饮|住宿|门票|购物|其他","date":"YYYY-MM-DD"}}；
 {"type":"update_expense","expenseId":"现有账目ID","changes":{"amount":8,"date":"YYYY-MM-DD","title":"可选的新标题"}}；
-{"type":"add_ticket","ticket":{"title":"票据标题","kind":"火车票|登机牌|酒店|门票|预约|通票","provider":"提供方","date":"日期","time":"时间","meta":"座位等","code":"确认号"}}；
-{"type":"select_playlist","playlistId":"已有音乐库ID","reason":"理由"}。
+{"type":"add_ticket","ticket":{"title":"票据标题","kind":"火车票|登机牌|酒店|门票|预约|通票","provider":"提供方","date":"日期","time":"时间","meta":"座位等","code":"确认号"}}。
 规划一日游、半日游、完整路线或“补充主流景点”时，必须优先使用一个 plan_day，而不是只添加一个地点。输出完整的顺路行程：一日游通常 5-8 个节点、半日游 3-5 个节点，包含合理的午餐或休息；从上午排到傍晚，避免跨区折返。replace=true 时 places 必须包含用户原来要求保留的地点，并把它们放在合理顺序。除非用户明确只要一个地点，否则不能只返回一个景点。
 用户给出多城市完整计划时，拆成多个 add_city。每个海外地点必须填写 mapQuery，使用 Apple Maps 容易识别的官方英文或当地名称，并附城市、国家。用户要求修复、补全地图名称时，对已有地点逐一使用 update_place，不能重复添加地点。地点 summary 要具体说明看什么、为什么值得停留，不能只写泛泛介绍。
 必须结合最近对话理解省略语和追问。用户只补充日期、金额、城市或“就这个”等短句时，将它视为上一轮未完成操作的补充，直接完成上一轮任务，不重复询问已经说过的信息。例如上一轮说“巧克力消费10欧”，助手询问日期，下一轮说“8月1号”，应直接 add_expense。
 用户说“改成、改为、调整为、修改、更正”时，必须从现有账目找到原 ID 并使用 update_expense；绝对不能新增负数调整账，也不能再新增一笔相似账目。changes 只填写用户要求修改的字段，其他字段由应用保留。用户没有明确说年份时，月日一律采用旅行年份 ${tripYear}，不能猜成 2023 或 2024。
 信息不完整时不编造票号与价格；时间是规划建议。最多返回 12 个操作。` },
-    { role: "user", content: `今天：${today}\n旅行年份：${tripYear}\n旅行名称：${trip.title}\n旅行风格：${trip.subtitle}\n当前旅行：${JSON.stringify(itinerary)}\n现有账目（修改时必须使用这里的 ID）：${JSON.stringify(ledger)}\n音乐库：${JSON.stringify(library)}\n以下是最近对话，必须延续其上下文：${JSON.stringify(recentConversation)}\n用户最新输入：${message}` },
+    { role: "user", content: `今天：${today}\n旅行年份：${tripYear}\n旅行名称：${trip.title}\n旅行风格：${trip.subtitle}\n当前旅行：${JSON.stringify(itinerary)}\n现有账目（修改时必须使用这里的 ID）：${JSON.stringify(ledger)}\n以下是最近对话，必须延续其上下文：${JSON.stringify(recentConversation)}\n用户最新输入：${message}` },
   ];
   let content = await ask(settings, messages, true);
   let result = jsonFromText(content);

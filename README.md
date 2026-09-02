@@ -1,42 +1,40 @@
-# Bontrip · 旅卡排版室
+# 旅卡排版室 · Travel Card Studio
 
-本地优先的旅行规划 PWA。城市卡片、每日路线、地点图片、票据、二维码、账目和旅行助手对话保存在浏览器中，并支持导出 HTML、PNG 与完整 JSON 备份。
+本地优先的旅行规划 PWA。旅行、地点、票据、账目、图片和对话保存在当前浏览器的 IndexedDB 中。
 
-## 在线预览
+## 直接打开
 
-当前构建版本发布在仓库的 `gh-pages` 分支：
+- 只想快速查看界面：双击 `index.html`，它会自动进入单文件预览。
+- 使用行程助手、地图连接和完整离线能力：双击 `打开旅卡排版室.command`，保持终端窗口开启。
 
-<https://bonmoon.github.io/Bontrip/>
+单文件预览可以浏览和编辑本地内容，但外部服务可能拒绝来自 `file://` 页面的连接；完整使用时请通过启动器打开。
 
-线上版本可以浏览、编辑和离线保存旅行资料。DeepSeek 密钥不会上传到 GitHub；需要旅行助手时，请使用下方的本地启动方式。
-
-## 本地启动
-
-macOS 可以直接双击：
-
-```text
-启动旅卡.command
-```
-
-也可以在终端运行：
-
-```bash
-npm install
-npm run local
-```
-
-打开“设置 → DeepSeek 旅行助手”，填入自己的 API Key。请求通过本机 `/api/deepseek` 转发，密钥只保存在当前浏览器。
-
-## 开发与构建
+## 本地运行
 
 ```bash
 npm install
 npm run dev
-npm run build
 ```
 
-生产文件输出到 `dist/`。更新源码后重新构建，并把 `dist/` 发布到 `gh-pages` 分支即可迭代线上版本。
+## 行程助手
 
-## 数据安全
+打开“设置 → 行程助手”，填写服务地址、访问密钥和模型。默认地址为：
 
-旅行资料主要保存在浏览器 IndexedDB。请定期在“设置 → 旅行资料”中导出完整备份；更换浏览器或清理网站数据前尤其需要备份。
+```text
+https://api.deepseek.com/chat/completions
+```
+
+连接信息保存在当前浏览器，不需要额外服务。
+
+## 构建
+
+```bash
+npm run build
+npm run preview
+```
+
+`dist/` 可以放在任意静态网站，也可以通过项目中的 GitHub Pages workflow 部署。
+
+## 备份
+
+浏览器存储仍可能被系统清理。请在“设置 → 旅行资料”定期导出完整 JSON 备份。

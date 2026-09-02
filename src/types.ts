@@ -127,8 +127,7 @@ export type AssistantOperation =
   | { type: "plan_day"; cityName?: string; date?: string; title?: string; replace?: boolean; places: Array<Partial<Place> & Pick<Place, "name">> }
   | { type: "add_expense"; expense: Partial<Expense> & Pick<Expense, "title" | "amount"> }
   | { type: "update_expense"; expenseId: string; changes: Partial<Omit<Expense, "id">> }
-  | { type: "add_ticket"; ticket: Partial<Ticket> & Pick<Ticket, "title"> }
-  | { type: "select_playlist"; playlistId: string; reason?: string };
+  | { type: "add_ticket"; ticket: Partial<Ticket> & Pick<Ticket, "title"> };
 
 export interface AssistantCommandResult {
   reply: string;

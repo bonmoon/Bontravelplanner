@@ -1,24 +1,24 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
-import { applyOptimizedDays, commandTrip, optimizeCity, parseExpenses, suggestTrack, summarizePlace, testAssistantConnection, type OptimizedDay } from "./assistant";
+import { applyOptimizedDays, commandTrip, optimizeCity, parseExpenses, summarizePlace, testAssistantConnection, type OptimizedDay } from "./assistant";
 import { CityCard, DaySection, Modal, PlaceRow, TicketCard, categoryIcon } from "./components";
 import { exportElementPng, exportJson, exportTripHtml } from "./exporters";
 import { appleMapsUrl, appleRouteUrl, googleMapsUrl, googleRouteUrl } from "./maps";
-import { sampleDocument, tripTracks } from "./sample";
+import { sampleDocument } from "./sample";
 import { loadAssistantSettings, loadDocument, requestPersistentStorage, saveAssistantSettings, saveDocument } from "./storage";
 import type { AssistantOperation, AssistantSettings, City, Expense, Place, PlaceCategory, Ticket, TicketKind, TravelDocument, Trip, ViewName } from "./types";
 import { uid } from "./types";
 
-const navItems: Array<{ id: ViewName; label: string; icon: string }> = [
-  { id: "home", label: "首页", icon: "⌂" },
-  { id: "trip", label: "我的旅行", icon: "⌘" },
-  { id: "map", label: "地图", icon: "⌖" },
-  { id: "tickets", label: "票据夹", icon: "▱" },
-  { id: "expenses", label: "记账本", icon: "▦" },
-  { id: "assistant", label: "旅行助手", icon: "✦" },
+const navItems: Array<{ id: ViewName; label: string; icon: string; image?: string }> = [
+  { id: "home", label: "首页", icon: "⌂", image: "./assets/bontrip-home.png" },
+  { id: "trip", label: "我的旅行", icon: "⌘", image: "./assets/bontrip-travel.png" },
+  { id: "map", label: "地图", icon: "⌖", image: "./assets/bontrip-map.png" },
+  { id: "tickets", label: "票据夹", icon: "▱", image: "./assets/bontrip-food.png" },
+  { id: "expenses", label: "记账本", icon: "▦", image: "./assets/bontrip-ledger.png" },
+  { id: "assistant", label: "旅行助手", icon: "✦", image: "./assets/travel-assistant-avatar.png" },
   { id: "settings", label: "设置", icon: "⚙" },
 ];
 
-type ModalName = "trip" | "city" | "editCity" | "place" | "ticket" | "expense" | "route" | "none";
+type ModalName = "trip" | "city" | "editCity" | "place" | "ticket" | "editTicket" | "expense" | "route" | "none";
 
 function readImage(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -28,46 +28,6 @@ function readImage(file: File): Promise<string> {
     reader.onerror = () => reject(new Error("这张图片暂时无法读取"));
     reader.readAsDataURL(file);
   });
-}
-
-function youtubePlaylistId(value: string): string {
-  try { return new URL(value.trim()).searchParams.get("list")?.trim() || ""; }
-  catch { return ""; }
-}
-
-function youtubeVideoId(value: string): string {
-  try {
-    const url = new URL(value.trim());
-    if (url.hostname === "youtu.be") return url.pathname.slice(1).split("/")[0] || "";
-    return url.searchParams.get("v")?.trim() || "";
-  } catch { return ""; }
-}
-
-function embeddedMusicUrl(value: string): string {
-  try {
-    const url = new URL(value);
-    const playlist = url.searchParams.get("list");
-    const video = url.hostname === "youtu.be" ? url.pathname.slice(1) : url.searchParams.get("v");
-    if (video) return `https://www.youtube.com/embed/${encodeURIComponent(video)}?autoplay=1&playsinline=1${playlist ? `&list=${encodeURIComponent(playlist)}` : ""}`;
-    if (playlist) return `https://www.youtube.com/embed?listType=playlist&list=${encodeURIComponent(playlist)}&autoplay=1&playsinline=1`;
-    if (url.hostname === "music.apple.com" && !url.pathname.includes("/search")) return value.replace("https://music.apple.com", "https://embed.music.apple.com");
-  } catch { /* The UI below explains that the selected URL cannot be embedded. */ }
-  return "";
-}
-
-async function readMusicMetadata(url: string): Promise<{ coverUrl: string; title: string }> {
-  const videoId = youtubeVideoId(url);
-  const fallbackCover = videoId ? `https://i.ytimg.com/vi/${encodeURIComponent(videoId)}/hqdefault.jpg` : "";
-  const endpoint = window.location.protocol === "file:" ? "http://127.0.0.1:4173" : window.location.origin;
-  try {
-    const response = await fetch(`${endpoint}/api/music-metadata?url=${encodeURIComponent(url)}`, { signal: AbortSignal.timeout(12_000) });
-    if (!response.ok) throw new Error("metadata unavailable");
-    const result = await response.json() as { coverUrl?: string; title?: string };
-    return { coverUrl: result.coverUrl || fallbackCover, title: result.title || "" };
-  } catch {
-    if (fallbackCover) return { coverUrl: fallbackCover, title: "" };
-    throw new Error("暂时没有读到这张歌单的封面");
-  }
 }
 
 function sendOnEnter(event: KeyboardEvent<HTMLTextAreaElement>) {
@@ -90,9 +50,9 @@ function App() {
   const [chatDraft, setChatDraft] = useState("");
   const [expenseDraft, setExpenseDraft] = useState("");
   const [assistantOpen, setAssistantOpen] = useState(false);
+  const [editingTicketId, setEditingTicketId] = useState("");
   const exportRef = useRef<HTMLDivElement>(null);
   const importRef = useRef<HTMLInputElement>(null);
-  const musicCoverAttempts = useRef(new Set<string>());
 
   const trip = document.trips.find((item) => item.id === document.activeTripId) || document.trips[0];
   const city = trip?.cities.find((item) => item.id === activeCityId) || trip?.cities[0];
@@ -118,35 +78,6 @@ function App() {
 
   useEffect(() => { window.scrollTo({ top: 0, behavior: "smooth" }); }, [view]);
 
-  useEffect(() => {
-    if (!trip) return;
-    const enabledLibrary = settings.musicLibrary.filter((item) => item.enabled);
-    const libraryItem = enabledLibrary.find((item) => item.url === trip.track.url) || (trip.track.artist !== "YouTube Music Library" ? enabledLibrary[0] : undefined);
-    if (!libraryItem) return;
-    if (trip.track.artist === "YouTube Music Library" && trip.track.url === libraryItem.url && trip.track.coverUrl === libraryItem.coverUrl && trip.track.playlistId === libraryItem.playlistId) return;
-    setDocument((current) => ({ ...current, trips: current.trips.map((item) => item.id === current.activeTripId ? { ...item, track: { title: libraryItem.title, artist: "YouTube Music Library", reason: libraryItem.note || item.track.reason, url: libraryItem.url, coverUrl: libraryItem.coverUrl, playlistId: libraryItem.playlistId } } : item) }));
-  }, [settings.musicLibrary, trip?.id, trip?.track.url, trip?.track.artist, trip?.track.coverUrl, trip?.track.playlistId]);
-
-  useEffect(() => {
-    const libraryItem = settings.musicLibrary.find((item) => !item.coverUrl && !musicCoverAttempts.current.has(item.id));
-    const tripNeedsCover = trip && !trip.track.coverUrl && trip.track.url && !musicCoverAttempts.current.has(`trip:${trip.id}:${trip.track.url}`);
-    const key = libraryItem?.id || (tripNeedsCover ? `trip:${trip.id}:${trip.track.url}` : "");
-    const url = libraryItem?.url || (tripNeedsCover ? trip.track.url : "");
-    if (!key || !url || !embeddedMusicUrl(url)) return;
-    musicCoverAttempts.current.add(key);
-    void readMusicMetadata(url).then((metadata) => {
-      if (!metadata.coverUrl) return;
-      if (libraryItem) {
-        setSettings((current) => {
-          const next = { ...current, musicLibrary: current.musicLibrary.map((item) => item.id === libraryItem.id ? { ...item, coverUrl: metadata.coverUrl, title: item.title || metadata.title } : item) };
-          saveAssistantSettings(next);
-          return next;
-        });
-      } else if (trip) {
-        setDocument((current) => ({ ...current, trips: current.trips.map((item) => item.id === trip.id ? { ...item, track: { ...item.track, coverUrl: metadata.coverUrl } } : item) }));
-      }
-    }).catch(() => undefined);
-  }, [settings.musicLibrary, trip?.id, trip?.track.url, trip?.track.coverUrl]);
 
   function showToast(message: string) {
     setToast(message);
@@ -192,10 +123,10 @@ function App() {
 
   async function setPlaceImages(dayId: string, placeId: string, files: File[]) {
     try {
-      const images = await Promise.all(files.slice(0, 6).map(readImage));
+      const images = await Promise.all(files.slice(0, 12).map(readImage));
       updateCity((current) => ({ ...current, days: current.days.map((day) => day.id === dayId ? { ...day, places: day.places.map((place) => {
         if (place.id !== placeId) return place;
-        const combined = [...(place.image ? [place.image] : []), ...(place.gallery || []), ...images].slice(-6);
+        const combined = [...(place.image ? [place.image] : []), ...(place.gallery || []), ...images].slice(-12);
         return { ...place, image: combined[0], gallery: combined.slice(1) };
       }) } : day) }));
       showToast(`放好了 ${images.length} 张地点图片`);
@@ -244,35 +175,6 @@ function App() {
     showToast("路线已经重新排好");
   }
 
-  function randomTrack() {
-    if (!trip) return;
-    const library = settings.musicLibrary.filter((item) => item.enabled);
-    if (library.length) {
-      const item = library[Math.floor(Math.random() * library.length)];
-      updateTrip((current) => ({ ...current, track: { title: item.title, artist: "YouTube Music Library", reason: item.note || "从自己的音乐库里抽到的一张旅行歌单。", url: item.url, coverUrl: item.coverUrl, playlistId: item.playlistId } }));
-      return showToast("从你的 YouTube Music Library 换了一张歌单");
-    }
-    const picked = tripTracks[Math.floor(Math.random() * tripTracks.length)];
-    updateTrip((current) => ({
-      ...current,
-      track: { ...picked, url: settings.musicProvider === "youtube" ? `https://music.youtube.com/search?q=${encodeURIComponent(`${picked.title} ${picked.artist}`)}` : `https://music.apple.com/cn/search?term=${encodeURIComponent(`${picked.title} ${picked.artist}`)}` },
-    }));
-    showToast("换了一首旅行主题曲");
-  }
-
-  async function aiTrack() {
-    if (!trip) return;
-    setBusy("track");
-    try {
-      const track = await suggestTrack(settings, trip);
-      updateTrip((current) => ({ ...current, track }));
-      showToast("这首歌很适合这趟旅行");
-    } catch (error) {
-      showToast(error instanceof Error ? error.message : "稍后再试");
-    } finally {
-      setBusy("");
-    }
-  }
 
   function applyAssistantOperations(operations: AssistantOperation[]) {
     const categories: PlaceCategory[] = ["景点", "美食", "交通", "住宿", "购物"];
@@ -328,10 +230,6 @@ function App() {
         if (operation.type === "add_ticket") {
           const raw = operation.ticket; const kind = raw.kind || "预约";
           next = { ...next, tickets: [{ id: uid("ticket"), cityId: city?.id || next.cities[0]?.id || "", kind, provider: raw.provider || kind, title: raw.title, date: raw.date || "待定", time: raw.time || "待定", meta: raw.meta || "", code: raw.code || "待补", color: ticketColors[kind] }, ...next.tickets] };
-        }
-        if (operation.type === "select_playlist") {
-          const item = settings.musicLibrary.find((entry) => entry.id === operation.playlistId);
-          if (item) next = { ...next, track: { title: item.title, artist: "YouTube Music Library", reason: operation.reason || item.note || "适合这段旅程。", url: item.url, coverUrl: item.coverUrl, playlistId: item.playlistId } };
         }
       });
       return next;
@@ -448,7 +346,6 @@ function App() {
               refElement={exportRef}
               trip={trip}
               city={city}
-              musicProvider={settings.musicProvider}
               busy={busy}
               onOpenCity={openCity}
               onCover={setCityCover}
@@ -463,17 +360,15 @@ function App() {
               onToggleLock={(dayId, placeId) => updateCity((current) => ({ ...current, days: current.days.map((day) => day.id === dayId ? { ...day, places: day.places.map((place) => place.id === placeId ? { ...place, locked: !place.locked } : place) } : day) }))}
               onRemovePlace={(dayId, placeId) => updateCity((current) => ({ ...current, days: current.days.map((day) => day.id === dayId ? { ...day, places: day.places.filter((place) => place.id !== placeId) } : day) }))}
               onOptimize={prepareOptimization}
-              onRandomTrack={randomTrack}
-              onAiTrack={aiTrack}
               onAssistant={() => setView("assistant")}
               onExpense={() => setModal("expense")}
               onTicket={() => setModal("ticket")}
             />
           )}
           {view === "map" && city && <MapView city={city} places={allPlaces} onOpenCity={openCity} />}
-          {view === "tickets" && <TicketsView trip={trip} onAdd={() => setModal("ticket")} />}
+          {view === "tickets" && <TicketsView trip={trip} onAdd={() => setModal("ticket")} onEdit={(id) => { setEditingTicketId(id); setModal("editTicket"); }} />}
           {view === "expenses" && <ExpensesView trip={trip} onAdd={() => setModal("expense")} onRemove={(id) => updateTrip((current) => ({ ...current, expenses: current.expenses.filter((item) => item.id !== id) }))} />}
-          {view === "assistant" && <AssistantView trip={trip} draft={chatDraft} onDraft={setChatDraft} onSend={sendChat} busy={busy === "chat"} onOptimize={prepareOptimization} onExpense={() => setModal("expense")} onTrack={aiTrack} />}
+          {view === "assistant" && <AssistantView trip={trip} draft={chatDraft} onDraft={setChatDraft} onSend={sendChat} busy={busy === "chat"} onOptimize={prepareOptimization} onExpense={() => setModal("expense")} />}
           {view === "settings" && <SettingsView settings={settings} onSettings={setSettings} onSave={saveSettings} onBackup={() => exportJson(document)} onImport={() => importRef.current?.click()} onPersist={async () => showToast(await requestPersistentStorage() ? "这台设备会尽量长久保留旅行资料" : "浏览器会继续自动保存旅行资料")} />}
         </div>
       </main>
@@ -487,6 +382,7 @@ function App() {
         return { ...current, days: current.days.map((day) => day.id === modalDayId ? { ...day, places: [...day.places, created] } : day) };
       }); setModal("none"); }} />}
       {modal === "ticket" && <NewTicketModal cityId={city?.id || trip.cities[0]?.id || ""} onClose={() => setModal("none")} onCreate={(created) => { updateTrip((current) => ({ ...current, tickets: [created, ...current.tickets] })); setModal("none"); showToast("票据已经收好了"); }} />}
+      {modal === "editTicket" && <NewTicketModal initial={trip.tickets.find((item) => item.id === editingTicketId)} cityId={city?.id || trip.cities[0]?.id || ""} onClose={() => setModal("none")} onCreate={(edited) => { updateTrip((current) => ({ ...current, tickets: current.tickets.map((item) => item.id === editingTicketId ? { ...edited, id: item.id } : item) })); setModal("none"); showToast("票据已经更新"); }} />}
       {modal === "expense" && city && <ExpenseModal draft={expenseDraft} onDraft={setExpenseDraft} busy={busy === "expense"} onQuick={quickExpense} onClose={() => setModal("none")} onManual={(created) => { updateTrip((current) => ({ ...current, expenses: [created, ...current.expenses] })); setModal("none"); showToast("这一笔已经记下"); }} cityId={city.id} />}
       {modal === "route" && city && <RouteModal city={city} optimized={optimized} onClose={() => setModal("none")} onAccept={acceptOptimization} />}
       <FloatingAssistant open={assistantOpen} onOpen={() => setAssistantOpen(true)} onClose={() => setAssistantOpen(false)} trip={trip} draft={chatDraft} onDraft={setChatDraft} onSend={sendChat} busy={busy === "chat"} onTicket={() => setModal("ticket")} onExpense={() => setModal("expense")} />
@@ -496,11 +392,11 @@ function App() {
 }
 
 function Sidebar({ view, onView, onNewTrip }: { view: ViewName; onView: (value: ViewName) => void; onNewTrip: () => void }) {
-  return <aside className="sidebar export-hide"><div className="brand"><span>旅</span><div><strong>旅卡排版室</strong><small>Travel Card Studio</small></div></div><button className="new-trip-button" onClick={onNewTrip}>＋ 新建旅行</button><nav>{navItems.map((item) => <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => onView(item.id)}><i>{item.icon}</i>{item.label}</button>)}</nav><div className="sidebar-illustration"><span>ʕ•ᴥ•ʔ</span><p>在路上，<br />收集风景，<br />也收集自己。</p></div></aside>;
+  return <aside className="sidebar export-hide"><div className="brand"><span>旅</span><div><strong>旅卡排版室</strong><small>Travel Card Studio</small></div></div><button className="new-trip-button" onClick={onNewTrip}>＋ 新建旅行</button><nav>{navItems.map((item) => <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => onView(item.id)}><i>{item.image ? <img src={item.image} alt="" /> : item.icon}</i>{item.label}</button>)}</nav><div className="sidebar-illustration"><img src="./assets/bontrip-travel.png" alt="旅行小猫" /><p>在路上，<br />收集风景，<br />也收集自己。</p></div></aside>;
 }
 
 function MobileNav({ view, onView }: { view: ViewName; onView: (value: ViewName) => void }) {
-  return <nav className="mobile-nav export-hide">{navItems.filter((item) => ["home", "trip", "map", "tickets", "expenses", "assistant"].includes(item.id)).map((item) => <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => onView(item.id)}><i>{item.icon}</i><span>{item.label === "我的旅行" ? "行程" : item.label.replace("本", "")}</span></button>)}</nav>;
+  return <nav className="mobile-nav export-hide">{navItems.filter((item) => ["home", "trip", "map", "tickets", "expenses", "assistant"].includes(item.id)).map((item) => <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => onView(item.id)}><i>{item.image ? <img src={item.image} alt="" /> : item.icon}</i><span>{item.label === "我的旅行" ? "行程" : item.label.replace("本", "")}</span></button>)}</nav>;
 }
 
 function Topbar({ trip, view, onSettings, onExportHtml, onExportPng, busy }: { trip: Trip; view: ViewName; onSettings: () => void; onExportHtml: () => void; onExportPng: () => void; busy: boolean }) {
@@ -512,8 +408,9 @@ function HomeView({ document, onOpenTrip, onCover, onNew }: { document: TravelDo
   return <section className="home-page"><header className="page-intro"><span className="eyebrow">MY TRAVEL CARDS</span><h2>下一次出发，想去哪里？</h2><p>把散落在地图、票夹和脑海里的小念头，收进一张张旅行卡片。</p></header><div className="trip-library">{document.trips.map((trip, index) => <article className={`library-trip ${trip.cover ? "has-cover" : ""}`} key={trip.id} style={{ backgroundColor: ["#ead8ef", "#dcefd9", "#f4dfc7"][index % 3] }}>{trip.cover && <img src={trip.cover} alt={`${trip.title}封面`} />}<button className="library-trip-open" onClick={() => onOpenTrip(trip.id)}><span>已保存</span><h3>{trip.title}</h3><p>{trip.startDate} 至 {trip.endDate}</p><strong>{trip.cities.length} 个城市 · {trip.cities.flatMap((city) => city.days.flatMap((day) => day.places)).length} 个地点</strong><i>{trip.cities.slice(0, 3).map((city) => city.name.slice(0, 1)).join(" · ")}</i></button><label className="trip-cover-upload">▣ {trip.cover ? "更换封面" : "设置封面"}<input type="file" accept="image/*" onChange={(event) => event.target.files?.[0] && onCover(trip.id, event.target.files[0])} /></label></article>)}<button className="library-trip add" onClick={onNew}><span>＋</span><h3>新建一段旅行</h3></button></div></section>;
 }
 
-function TripView({ refElement, trip, city, musicProvider, busy, onOpenCity, onCover, onEditCity, onRemoveCity, onPlaceImage, onNewCity, onNewDay, onRemoveDay, onNewPlace, onSummarize, onToggleLock, onRemovePlace, onOptimize, onRandomTrack, onAiTrack, onAssistant, onExpense, onTicket }: { refElement: React.RefObject<HTMLDivElement | null>; trip: Trip; city: City; musicProvider: AssistantSettings["musicProvider"]; busy: string; onOpenCity: (id: string) => void; onCover: (city: City, file: File) => void; onEditCity: (id: string) => void; onRemoveCity: (id: string) => void; onPlaceImage: (dayId: string, placeId: string, files: File[]) => void; onNewCity: () => void; onNewDay: () => void; onRemoveDay: (dayId: string) => void; onNewPlace: (dayId: string) => void; onSummarize: (dayId: string, place: Place) => void; onToggleLock: (dayId: string, placeId: string) => void; onRemovePlace: (dayId: string, placeId: string) => void; onOptimize: () => void; onRandomTrack: () => void; onAiTrack: () => void; onAssistant: () => void; onExpense: () => void; onTicket: () => void }) {
-  void musicProvider;
+function TripView({ refElement, trip, city, busy, onOpenCity, onCover, onEditCity, onRemoveCity, onPlaceImage, onNewCity, onNewDay, onRemoveDay, onNewPlace, onSummarize, onToggleLock, onRemovePlace, onOptimize, onAssistant, onExpense, onTicket }: { refElement: React.RefObject<HTMLDivElement | null>; trip: Trip; city: City; busy: string; onOpenCity: (id: string) => void; onCover: (city: City, file: File) => void; onEditCity: (id: string) => void; onRemoveCity: (id: string) => void; onPlaceImage: (dayId: string, placeId: string, files: File[]) => void; onNewCity: () => void; onNewDay: () => void; onRemoveDay: (dayId: string) => void; onNewPlace: (dayId: string) => void; onSummarize: (dayId: string, place: Place) => void; onToggleLock: (dayId: string, placeId: string) => void; onRemovePlace: (dayId: string, placeId: string) => void; onOptimize: () => void; onAssistant: () => void; onExpense: () => void; onTicket: () => void }) {
+  const onRandomTrack = undefined;
+  const onAiTrack = undefined;
   useEffect(() => {
     const edit = (event: Event) => onEditCity((event as CustomEvent<string>).detail);
     const remove = (event: Event) => onRemoveCity((event as CustomEvent<string>).detail);
@@ -525,20 +422,7 @@ function TripView({ refElement, trip, city, musicProvider, busy, onOpenCity, onC
   return <div className="trip-page" ref={refElement}><section className="export-only export-title"><span>TRAVEL CARD · {trip.cities.length} STOPS</span><h1>{trip.title}</h1><p>{trip.startDate} — {trip.endDate}</p><small>{routeTitle}</small></section><section className="trip-heading"><div><span className="eyebrow">{routeTitle}</span><p>{trip.startDate} — {trip.endDate}</p></div><MusicCard trip={trip} busy={busy === "track"} onRandom={onRandomTrack} onAi={onAiTrack} /></section><section className="city-strip"><header><div><h2>城市卡片</h2><span>{trip.cities.length} STOPS</span></div><button className="text-button export-hide" onClick={onNewCity}>＋ 添加城市</button></header><div>{trip.cities.map((item) => <CityCard key={item.id} city={item} active={item.id === city.id} onOpen={() => onOpenCity(item.id)} onCover={(file) => onCover(item, file)} />)}<button className="city-add-card export-hide" onClick={onNewCity}>＋<span>下一座城市</span></button></div></section><div className="trip-workspace"><section className="itinerary-card"><header className="section-title-row"><div><span className="eyebrow">TODAY IN {city.englishName.toUpperCase()}</span><h2>{city.name} · 顺路行程</h2><p>{city.note}</p></div><div className="itinerary-heading-actions export-hide"><button className="text-button" onClick={onNewDay}>＋ 新增一天</button><button className="primary-button" onClick={onOptimize} disabled={busy === "route"}>{busy === "route" ? "正在整理…" : "✦ 重新排顺"}</button></div></header>{city.days.length ? city.days.map((day) => <DaySection key={day.id} day={day} onAdd={() => onNewPlace(day.id)} onRemove={() => onRemoveDay(day.id)}>{day.places.map((place, index) => <PlaceRow key={place.id} place={place} city={city} index={index} isLast={index === day.places.length - 1} busy={busy === place.id} onSummarize={() => onSummarize(day.id, place)} onToggleLock={() => onToggleLock(day.id, place.id)} onRemove={() => onRemovePlace(day.id, place.id)} onImages={(files) => onPlaceImage(day.id, place.id, files)} />)}</DaySection>) : <EmptyDay onAdd={() => { onNewDay(); }} />}</section><aside className="trip-side export-hide"><section className="quick-card assistant-quick"><span>✦</span><div><h3>行程助手</h3><p>一起整理地点、看点与每天的节奏。</p></div><button onClick={onAssistant}>聊一聊</button></section><section className="quick-card"><span>▦</span><div><h3>随手记账</h3><p>{trip.expenses.length} 笔旅行支出已经收好。</p></div><button onClick={onExpense}>记一笔</button></section><section className="quick-card"><span>▱</span><div><h3>票据夹</h3><p>{trip.tickets.length} 张车票、门票与预订单。</p></div><button onClick={onTicket}>加票据</button></section></aside></div></div>;
 }
 
-function MusicCard({ trip, musicProvider = loadAssistantSettings().musicProvider, busy, onRandom, onAi }: { trip: Trip; musicProvider?: AssistantSettings["musicProvider"]; busy: boolean; onRandom: () => void; onAi: () => void }) {
-  const musicUrl = trip.track.artist === "YouTube Music Library" ? trip.track.url : musicProvider === "youtube" ? `https://music.youtube.com/search?q=${encodeURIComponent(`${trip.track.title} ${trip.track.artist}`)}` : `https://music.apple.com/cn/search?term=${encodeURIComponent(`${trip.track.title} ${trip.track.artist}`)}`;
-  const embedUrl = embeddedMusicUrl(trip.track.playlistId ? `https://music.youtube.com/playlist?list=${encodeURIComponent(trip.track.playlistId)}` : musicUrl);
-  const [playerOpen, setPlayerOpen] = useState(false);
-  const [playerMessage, setPlayerMessage] = useState("");
-  useEffect(() => { setPlayerOpen(false); setPlayerMessage(""); }, [musicUrl]);
-  function togglePlayer() {
-    if (!embedUrl) { setPlayerMessage("这首是搜索推荐。把歌曲或 Playlist 链接加入 YouTube Music Library 后，就能直接在这里播放。"); return; }
-    if (trip.track.playlistId?.startsWith("OLAK5uy_") && !youtubeVideoId(musicUrl)) setPlayerMessage("这是 YouTube Music 自动专辑。部分自动专辑不允许网页内播放；若播放器仍显示不可用，请从具体歌曲的“分享”复制带 v= 的链接，或使用普通公开 Playlist。");
-    else setPlayerMessage("");
-    setPlayerOpen((value) => !value);
-  }
-  return <article className={`music-card export-hide ${playerOpen || playerMessage ? "player-open" : ""}`}><div className={`record-art ${trip.track.coverUrl ? "has-cover" : ""}`}>{trip.track.coverUrl ? <img src={trip.track.coverUrl} alt={`${trip.track.title}封面`} /> : <span>♪</span>}</div><div><small>旅行主题曲 · {musicProvider === "youtube" ? "YouTube Music" : "Apple Music"}</small><strong>{trip.track.title}</strong><span>{trip.track.artist}</span><p>{trip.track.reason}</p></div><div><button onClick={togglePlayer} aria-label={playerOpen ? "停止播放" : "在当前页面播放"}>{playerOpen ? "■" : "▶"}</button><button onClick={onRandom}>↻</button><button onClick={onAi} disabled={busy}>{busy ? "…" : "✦"}</button></div>{playerOpen && <section className="inline-music-player"><iframe src={embedUrl} title={`${trip.track.title} 播放器`} allow="autoplay; encrypted-media; picture-in-picture" allowFullScreen /><button onClick={() => setPlayerOpen(false)}>关闭播放器</button></section>}{playerMessage && <section className="inline-music-message"><span>{playerMessage}</span><button onClick={() => setPlayerMessage("")}>×</button></section>}</article>;
-}
+function MusicCard(_props: { trip: Trip; busy: boolean; onRandom?: () => void; onAi?: () => void }) { return null; }
 
 function EmptyDay({ onAdd }: { onAdd: () => void }) { return <div className="empty-state"><span>⌖</span><h3>这座城市还留着一页空白</h3><p>先建第一天，再慢慢把地点和路线串起来。</p><button className="primary-button" onClick={onAdd}>＋ 新建第一天</button></div>; }
 
@@ -546,15 +430,15 @@ function MapView({ city, places, onOpenCity }: { city: City; places: Place[]; on
   return <section className="map-page"><header className="page-intro"><span className="eyebrow">MAP DESK</span><h2>{city.name}地图导览</h2><p>地点按当天顺序连在一起，出门时可以直接交给常用地图。</p></header><div className="map-layout"><section className="paper-map"><div className="map-lines">{places.map((place, index) => <div className="map-pin" key={place.id} style={{ left: `${18 + (index * 23) % 68}%`, top: `${18 + (index * 31) % 60}%` }}><span>{index + 1}</span><small>{place.name}</small></div>)}</div><div className="map-route-actions"><a href={appleRouteUrl(places, city)} target="_blank" rel="noreferrer">在 Apple 地图打开</a><a href={googleRouteUrl(places, city)} target="_blank" rel="noreferrer">在 Google 地图打开</a></div></section><aside className="map-place-list"><header><h3>{places.length} 个地点</h3></header>{places.map((place, index) => <article key={place.id}><span>{index + 1}</span><div><small>{place.category}</small><strong>{place.name}</strong><p>{place.time} · {place.duration}</p></div><div><a href={appleMapsUrl(place, city)} target="_blank" rel="noreferrer"></a><a href={googleMapsUrl(place, city)} target="_blank" rel="noreferrer">G</a></div></article>)}</aside></div><div className="city-switcher">{[city].map((item) => <button key={item.id} onClick={() => onOpenCity(item.id)}>{item.name}</button>)}</div></section>;
 }
 
-function TicketsView({ trip, onAdd }: { trip: Trip; onAdd: () => void }) { return <section className="tickets-page"><header className="page-intro row"><div><span className="eyebrow">TICKET POCKET</span><h2>一路收好的票据</h2><p>车票、门票和预订单都能离线翻出来。</p></div><button className="primary-button" onClick={onAdd}>＋ 添加票据</button></header><div className="ticket-grid">{trip.tickets.map((ticket) => <TicketCard key={ticket.id} ticket={ticket} city={trip.cities.find((city) => city.id === ticket.cityId)} />)}</div></section>; }
+function TicketsView({ trip, onAdd, onEdit }: { trip: Trip; onAdd: () => void; onEdit: (id: string) => void }) { return <section className="tickets-page"><header className="page-intro row"><div><span className="eyebrow">TICKET POCKET</span><h2>一路收好的票据</h2><p>车票、门票和预订单都能离线翻出来。</p></div><button className="primary-button" onClick={onAdd}>＋ 添加票据</button></header><div className="ticket-grid">{trip.tickets.map((ticket) => <TicketCard key={ticket.id} ticket={ticket} city={trip.cities.find((city) => city.id === ticket.cityId)} onEdit={() => onEdit(ticket.id)} />)}</div></section>; }
 
 function ExpensesView({ trip, onAdd, onRemove }: { trip: Trip; onAdd: () => void; onRemove: (id: string) => void }) {
   const totals = useMemo(() => Object.entries(trip.expenses.reduce<Record<string, number>>((acc, item) => ({ ...acc, [item.currency]: (acc[item.currency] || 0) + item.amount }), {})), [trip.expenses]);
   return <section className="expenses-page"><header className="page-intro row"><div><span className="eyebrow">TRAVEL LEDGER</span><h2>随手记下，回来再算</h2><p>每一笔都可以关联城市、日期和用途。</p></div><button className="primary-button" onClick={onAdd}>＋ 记一笔</button></header><div className="expense-layout"><section className="expense-summary"><small>旅行支出</small><div>{totals.map(([currency, amount]) => <strong key={currency}>{currency} {amount.toFixed(2)}</strong>)}</div><p>{trip.expenses.length} 笔 · {new Set(trip.expenses.map((item) => item.cityId)).size} 个城市</p></section><section className="expense-list">{trip.expenses.map((expense) => <article key={expense.id}><span>{expense.category === "交通" ? "↗" : expense.category === "餐饮" ? "◌" : expense.category === "门票" ? "▱" : "◇"}</span><div><strong>{expense.title}</strong><small>{trip.cities.find((city) => city.id === expense.cityId)?.name} · {expense.date}</small></div><b>{expense.currency} {expense.amount.toFixed(2)}</b><button onClick={() => onRemove(expense.id)}>×</button></article>)}</section></div></section>;
 }
 
-function AssistantView({ trip, draft, onDraft, onSend, busy, onOptimize, onExpense, onTrack }: { trip: Trip; draft: string; onDraft: (value: string) => void; onSend: (event: FormEvent) => void; busy: boolean; onOptimize: () => void; onExpense: () => void; onTrack: () => void }) {
-  return <section className="assistant-page"><header className="assistant-header"><div className="assistant-avatar">旅</div><div><span className="eyebrow">TRIP COMPANION</span><h2>{trip.title}的旅行助手</h2><p>可以从一个模糊念头开始，我们慢慢把它排成路。</p></div></header><div className="assistant-layout"><section className="chat-card"><div className="chat-messages">{trip.chats.map((message) => <article key={message.id} className={message.role}><span>{message.role === "assistant" ? "旅" : "我"}</span><p>{message.content}</p></article>)}{busy && <article className="assistant"><span>旅</span><p>我在翻一翻你的旅行…</p></article>}</div><form onSubmit={onSend}><textarea value={draft} disabled={busy} onChange={(event) => onDraft(event.target.value)} onKeyDown={sendOnEnter} placeholder="想把哪一天排得更松一点？" /><button disabled={busy || !draft.trim()}>➤</button></form></section><aside className="assistant-tools"><button onClick={onOptimize}><span>⌘</span><strong>重新排顺路线</strong><small>保留固定地点</small></button><button onClick={onExpense}><span>▦</span><strong>随手记一笔</strong><small>一句话就够</small></button><button onClick={onTrack}><span>♫</span><strong>换一首主题曲</strong><small>适合这趟旅程</small></button></aside></div></section>;
+function AssistantView({ trip, draft, onDraft, onSend, busy, onOptimize, onExpense }: { trip: Trip; draft: string; onDraft: (value: string) => void; onSend: (event: FormEvent) => void; busy: boolean; onOptimize: () => void; onExpense: () => void }) {
+  return <section className="assistant-page"><header className="assistant-header"><div className="assistant-avatar"><img src="./assets/travel-assistant-avatar.png" alt="" /></div><div><span className="eyebrow">TRIP COMPANION</span><h2>{trip.title}的旅行助手</h2><p>可以从一个模糊念头开始，我们慢慢把它排成路。</p></div></header><div className="assistant-layout"><section className="chat-card"><div className="chat-messages">{trip.chats.map((message) => <article key={message.id} className={message.role}><span>{message.role === "assistant" ? "旅" : "我"}</span><p>{message.content}</p></article>)}{busy && <article className="assistant"><span>旅</span><p>我在翻一翻你的旅行…</p></article>}</div><form onSubmit={onSend}><textarea value={draft} disabled={busy} onChange={(event) => onDraft(event.target.value)} onKeyDown={sendOnEnter} placeholder="想把哪一天排得更松一点？" /><button disabled={busy || !draft.trim()}>➤</button></form></section><aside className="assistant-tools"><button onClick={onOptimize}><span>⌘</span><strong>重新排顺路线</strong><small>保留固定地点</small></button><button onClick={onExpense}><span>▦</span><strong>随手记一笔</strong><small>一句话就够</small></button></aside></div></section>;
 }
 
 function FloatingAssistant({ open, onOpen, onClose, trip, draft, onDraft, onSend, busy, onTicket, onExpense }: { open: boolean; onOpen: () => void; onClose: () => void; trip: Trip; draft: string; onDraft: (value: string) => void; onSend: (event: FormEvent) => void; busy: boolean; onTicket: () => void; onExpense: () => void }) {
@@ -565,28 +449,8 @@ function FloatingAssistant({ open, onOpen, onClose, trip, draft, onDraft, onSend
 }
 
 function SettingsView({ settings, onSettings, onSave, onBackup, onImport, onPersist }: { settings: AssistantSettings; onSettings: (value: AssistantSettings) => void; onSave: (event: FormEvent) => void; onBackup: () => void; onImport: () => void; onPersist: () => void }) {
-  const [musicTitle, setMusicTitle] = useState("");
-  const [musicUrl, setMusicUrl] = useState("");
-  const [musicNote, setMusicNote] = useState("");
-  const [musicError, setMusicError] = useState("");
   const [connectionStatus, setConnectionStatus] = useState("");
   const [testingConnection, setTestingConnection] = useState(false);
-  const [musicPreview, setMusicPreview] = useState("");
-  async function addMusicLibraryItem() {
-    const playlistId = youtubePlaylistId(musicUrl);
-    const videoId = youtubeVideoId(musicUrl);
-    if (!musicTitle.trim() || (!playlistId && !videoId)) return setMusicError("请填写名称，并粘贴 YouTube Music Playlist 或具体歌曲的分享链接");
-    setMusicError("正在读取歌单封面…");
-    let metadata = { coverUrl: "", title: "" };
-    try { metadata = await readMusicMetadata(musicUrl.trim()); } catch { /* The item remains usable and can receive a manual cover. */ }
-    const next = { ...settings, musicProvider: "youtube" as const, musicLibrary: [...settings.musicLibrary, { id: uid("music"), title: musicTitle.trim() || metadata.title, url: musicUrl.trim(), playlistId, coverUrl: metadata.coverUrl, note: musicNote.trim(), enabled: true }] };
-    onSettings(next); saveAssistantSettings(next); setMusicTitle(""); setMusicUrl(""); setMusicNote(""); setMusicError("");
-  }
-  function updateLibrary(next: AssistantSettings["musicLibrary"]) { const value = { ...settings, musicLibrary: next }; onSettings(value); saveAssistantSettings(value); }
-  async function updateMusicCover(id: string, file: File) {
-    try { const coverUrl = await readImage(file); updateLibrary(settings.musicLibrary.map((item) => item.id === id ? { ...item, coverUrl } : item)); }
-    catch (error) { setMusicError(error instanceof Error ? error.message : "封面无法读取"); }
-  }
   async function testConnection() {
     setTestingConnection(true); setConnectionStatus("正在检查连接…");
     try { setConnectionStatus(await testAssistantConnection(settings)); }
@@ -594,10 +458,9 @@ function SettingsView({ settings, onSettings, onSave, onBackup, onImport, onPers
     finally { setTestingConnection(false); }
   }
   return <section className="settings-page">
-    <header className="page-intro"><span className="eyebrow">PREFERENCES</span><h2>把旅卡留在自己的设备里</h2><p>连接信息、音乐库和旅行资料都只保存在当前浏览器。</p></header>
+    <header className="page-intro"><span className="eyebrow">PREFERENCES</span><h2>把旅卡留在自己的设备里</h2><p>连接信息和旅行资料都只保存在当前浏览器。</p></header>
     <div className="settings-grid">
-      <form className="settings-card" onSubmit={onSave}><header><span>✦</span><div><h3>DeepSeek 旅行助手</h3><p>聊天可以直接写入城市、地点、票据与账目。</p></div></header><label><span>服务地址</span><input value={settings.baseUrl} onChange={(event) => onSettings({ ...settings, baseUrl: event.target.value })} /></label><label><span>访问密钥</span><input type="password" value={settings.apiKey} onChange={(event) => onSettings({ ...settings, apiKey: event.target.value })} placeholder="••••••••••••" /></label><label><span>模型</span><select value={settings.model} onChange={(event) => onSettings({ ...settings, model: event.target.value })}><option value="deepseek-v4-flash">V4 Flash · 日常规划</option><option value="deepseek-v4-pro">V4 Pro · 精细规划</option></select></label><label><span>主题曲打开方式</span><select value={settings.musicProvider} onChange={(event) => onSettings({ ...settings, musicProvider: event.target.value as AssistantSettings["musicProvider"] })}><option value="youtube">YouTube Music</option><option value="apple">Apple Music</option></select></label><div className="settings-connection-actions"><button className="primary-button">保存连接</button><button type="button" onClick={testConnection} disabled={testingConnection}>{testingConnection ? "检查中…" : "测试连接"}</button></div>{connectionStatus && <p className={connectionStatus.startsWith("连接成功") ? "connection-status success" : "connection-status"}>{connectionStatus}</p>}</form>
-      <section className="settings-card music-library-settings"><header><span>♫</span><div><h3>YouTube Music Library</h3><p>添加自己的 Playlist 或单曲，旅行助手只会从这里挑选。</p></div></header><div className="music-library-list">{settings.musicLibrary.map((item) => <article key={item.id}><label className="music-library-cover" title="设置歌单封面">{item.coverUrl ? <img src={item.coverUrl} alt={`${item.title}封面`} /> : <span>＋封面</span>}<input type="file" accept="image/*" onChange={(event) => { const file = event.target.files?.[0]; if (file) void updateMusicCover(item.id, file); event.target.value = ""; }} /></label><div><strong>{item.title}</strong><small>{item.note || (item.playlistId.startsWith("OLAK5uy_") && !youtubeVideoId(item.url) ? "自动专辑 · 建议改用具体歌曲分享链接" : "YouTube Music Playlist")}</small></div><button className="music-preview-button" onClick={() => setMusicPreview((value) => value === item.url ? "" : item.url)}>{musicPreview === item.url ? "停止" : "试听"}</button><button className={item.enabled ? "music-toggle active" : "music-toggle"} onClick={() => updateLibrary(settings.musicLibrary.map((entry) => entry.id === item.id ? { ...entry, enabled: !entry.enabled } : entry))}>♪</button><button className="music-remove" onClick={() => { if (musicPreview === item.url) setMusicPreview(""); updateLibrary(settings.musicLibrary.filter((entry) => entry.id !== item.id)); }}>×</button></article>)}</div>{musicPreview && <div className="settings-music-player"><iframe src={embeddedMusicUrl(musicPreview)} title="音乐库试听" allow="autoplay; encrypted-media; picture-in-picture" allowFullScreen /></div>}<div className="music-library-add"><input value={musicTitle} onChange={(event) => setMusicTitle(event.target.value)} placeholder="歌单 / 单曲名称" /><input value={musicUrl} onChange={(event) => setMusicUrl(event.target.value)} placeholder="YouTube Music Playlist 或具体歌曲分享链接" /><input value={musicNote} onChange={(event) => setMusicNote(event.target.value)} placeholder="适合：夜车、海边、城市散步…" /><button className="primary-button" type="button" onClick={() => void addMusicLibraryItem()}>＋ 加入 Library</button>{musicError && <p>{musicError}</p>}</div></section>
+      <form className="settings-card" onSubmit={onSave}><header><span>✦</span><div><h3>DeepSeek 旅行助手</h3><p>聊天可以直接写入城市、地点、票据与账目。</p></div></header><label><span>服务地址</span><input value={settings.baseUrl} onChange={(event) => onSettings({ ...settings, baseUrl: event.target.value })} /></label><label><span>访问密钥</span><input type="password" value={settings.apiKey} onChange={(event) => onSettings({ ...settings, apiKey: event.target.value })} placeholder="••••••••••••" /></label><label><span>模型</span><select value={settings.model} onChange={(event) => onSettings({ ...settings, model: event.target.value })}><option value="deepseek-v4-flash">V4 Flash · 日常规划</option><option value="deepseek-v4-pro">V4 Pro · 精细规划</option></select></label><div className="settings-connection-actions"><button className="primary-button">保存连接</button><button type="button" onClick={testConnection} disabled={testingConnection}>{testingConnection ? "检查中…" : "测试连接"}</button></div>{connectionStatus && <p className={connectionStatus.startsWith("连接成功") ? "connection-status success" : "connection-status"}>{connectionStatus}</p>}</form>
       <section className="settings-card"><header><span>⌂</span><div><h3>旅行资料</h3><p>带走完整备份，换设备时也能继续。</p></div></header><div className="settings-actions"><button onClick={onBackup}>导出完整备份</button><button onClick={onImport}>导入旅行备份</button><button onClick={onPersist}>在这台设备长久保留</button></div></section>
     </div>
   </section>;
@@ -621,11 +484,11 @@ function NewPlaceModal({ onClose, onCreate }: { onClose: () => void; onCreate: (
   return <Modal title="添加一个地点" eyebrow="ADD A PLACE" onClose={onClose}><form className="modal-form" onSubmit={submit}><MultiImagePicker values={images} label={category === "美食" ? "美食照片" : "地点图片"} onChange={setImages} /><div className="category-picker">{(Object.keys(categoryIcon) as PlaceCategory[]).map((item) => <button type="button" key={item} className={category === item ? "active" : ""} onClick={() => setCategory(item)}>{categoryIcon[item]} {item}</button>)}</div><label><span>地点名称</span><input name="name" required placeholder="美泉宫" /></label><label><span>地图检索名</span><input name="mapQuery" placeholder="Schönbrunn Palace, Vienna, Austria" /></label><div className="form-row"><label><span>开始</span><input name="time" type="time" defaultValue="10:00" /></label><label><span>结束</span><input name="endTime" type="time" /></label></div><label><span>建议停留</span><input name="duration" defaultValue="1 小时" /></label><label><span>地图链接</span><input name="mapUrl" placeholder="粘贴 Apple 或 Google 地图地点" /></label><label><span>先记一点</span><textarea name="summary" placeholder="之后也可以让行程助手补完整" /></label><footer><button type="button" onClick={onClose}>取消</button><button className="primary-button">加入这一天</button></footer></form></Modal>;
 }
 
-function NewTicketModal({ cityId, onClose, onCreate }: { cityId: string; onClose: () => void; onCreate: (ticket: Ticket) => void }) {
-  const [kind, setKind] = useState<TicketKind>("火车票"); const colors: Record<TicketKind, string> = { 火车票: "#efd5cf", 登机牌: "#d9e1ed", 酒店: "#efe2bd", 门票: "#dbe7d5", 预约: "#ead8e8", 通票: "#d8e5e1" };
-  const [qrCode, setQrCode] = useState("");
-  function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const data = new FormData(event.currentTarget); onCreate({ id: uid("ticket"), kind, cityId, provider: String(data.get("provider") || kind), title: String(data.get("title")), date: String(data.get("date") || "待定"), time: String(data.get("time") || "待定"), meta: String(data.get("meta") || ""), code: String(data.get("code") || "TRIP"), color: colors[kind], qrCode: qrCode || undefined }); }
-  return <Modal title="收好一张票据" eyebrow="TICKET POCKET" onClose={onClose}><form className="modal-form" onSubmit={submit}><ImagePicker value={qrCode} label="票据二维码" square onChange={setQrCode} /><div className="category-picker">{(Object.keys(colors) as TicketKind[]).map((item) => <button type="button" key={item} className={kind === item ? "active" : ""} onClick={() => setKind(item)}>{item}</button>)}</div><label><span>标题</span><input name="title" required placeholder="Zürich HB → Salzburg Hbf" /></label><label><span>提供方</span><input name="provider" placeholder="SBB Train" /></label><div className="form-row"><label><span>日期</span><input name="date" type="date" /></label><label><span>时间</span><input name="time" placeholder="08:32 → 15:02" /></label></div><label><span>座位 / 房型 / 人数</span><input name="meta" placeholder="Coach 34 · Seat 54" /></label><label><span>确认号</span><input name="code" placeholder="RJX 165" /></label><footer><button type="button" onClick={onClose}>取消</button><button className="primary-button">收进票夹</button></footer></form></Modal>;
+function NewTicketModal({ cityId, initial, onClose, onCreate }: { cityId: string; initial?: Ticket; onClose: () => void; onCreate: (ticket: Ticket) => void }) {
+  const [kind, setKind] = useState<TicketKind>(initial?.kind || "火车票"); const colors: Record<TicketKind, string> = { 火车票: "#efd5cf", 登机牌: "#d9e1ed", 酒店: "#efe2bd", 门票: "#dbe7d5", 预约: "#ead8e8", 通票: "#d8e5e1" };
+  const [qrCode, setQrCode] = useState(initial?.qrCode || "");
+  function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const data = new FormData(event.currentTarget); onCreate({ id: initial?.id || uid("ticket"), kind, cityId: initial?.cityId || cityId, provider: String(data.get("provider") || kind), title: String(data.get("title")), date: String(data.get("date") || "待定"), time: String(data.get("time") || "待定"), meta: String(data.get("meta") || ""), code: String(data.get("code") || "TRIP"), color: colors[kind], qrCode: qrCode || undefined }); }
+  return <Modal title={initial ? "编辑这张票据" : "收好一张票据"} eyebrow="TICKET POCKET" onClose={onClose}><form className="modal-form" onSubmit={submit}><ImagePicker value={qrCode} label="票据二维码" square onChange={setQrCode} /><div className="category-picker">{(Object.keys(colors) as TicketKind[]).map((item) => <button type="button" key={item} className={kind === item ? "active" : ""} onClick={() => setKind(item)}>{item}</button>)}</div><label><span>标题</span><input name="title" required placeholder="Zürich HB → Salzburg Hbf" defaultValue={initial?.title} /></label><label><span>提供方</span><input name="provider" placeholder="SBB Train" defaultValue={initial?.provider} /></label><div className="form-row"><label><span>日期</span><input name="date" type="date" defaultValue={initial?.date === "待定" ? "" : initial?.date} /></label><label><span>时间</span><input name="time" placeholder="08:32 → 15:02" defaultValue={initial?.time === "待定" ? "" : initial?.time} /></label></div><label><span>座位 / 房型 / 人数</span><input name="meta" placeholder="Coach 34 · Seat 54" defaultValue={initial?.meta} /></label><label><span>确认号</span><input name="code" placeholder="RJX 165" defaultValue={initial?.code} /></label><footer><button type="button" onClick={onClose}>取消</button><button className="primary-button">{initial ? "保存修改" : "收进票夹"}</button></footer></form></Modal>;
 }
 
 function ImagePicker({ value, label, onChange, square = false }: { value: string; label: string; onChange: (value: string) => void; square?: boolean }) {
@@ -637,7 +500,7 @@ function MultiImagePicker({ values, label, onChange }: { values: string[]; label
   const [error, setError] = useState("");
   return <div className="multi-image-picker">
     <div className="multi-image-preview">{values.map((value, index) => <figure key={`${value.slice(-24)}-${index}`}><img src={value} alt={`${label} ${index + 1}`} /><button type="button" aria-label={`移除第 ${index + 1} 张图片`} onClick={() => onChange(values.filter((_, itemIndex) => itemIndex !== index))}>×</button></figure>)}</div>
-    <label><b>＋</b><span>{values.length ? `继续添加 · 已选 ${values.length} 张` : `${label} · 可同时选择多张`}</span><input type="file" accept="image/*" multiple onChange={async (event) => { const files = Array.from(event.target.files || []).slice(0, Math.max(0, 6 - values.length)); event.target.value = ""; if (!files.length) return; try { setError(""); onChange([...values, ...(await Promise.all(files.map(readImage)))].slice(0, 6)); } catch (reason) { setError(reason instanceof Error ? reason.message : "图片无法读取"); } }} /></label>
+    <label><b>＋</b><span>{values.length ? `继续添加 · 已选 ${values.length} / 12 张` : `${label} · 可同时选择多张`}</span><input type="file" accept="image/*" multiple onChange={async (event) => { const files = Array.from(event.target.files || []).slice(0, Math.max(0, 12 - values.length)); event.target.value = ""; if (!files.length) return; try { setError(""); onChange([...values, ...(await Promise.all(files.map(readImage)))].slice(0, 12)); } catch (reason) { setError(reason instanceof Error ? reason.message : "图片无法读取"); } }} /></label>
     {error && <i>{error}</i>}
   </div>;
 }

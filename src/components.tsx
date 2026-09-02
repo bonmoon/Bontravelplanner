@@ -26,7 +26,7 @@ export function Modal({ title, eyebrow, children, onClose, wide = false }: { tit
 export function CityCard({ city, active, onOpen, onCover }: { city: City; active: boolean; onOpen: () => void; onCover: (file: File) => void }) {
   const placeCount = city.days.reduce((sum, day) => sum + day.places.length, 0);
   return (
-    <article className={`city-cover-card ${active ? "active" : ""}`} style={{ backgroundColor: city.color }} onClick={onOpen}>
+    <article className={`city-cover-card ${city.cover ? "has-cover" : ""} ${active ? "active" : ""}`} style={{ backgroundColor: city.color }} onClick={onOpen}>
       <div className="city-card-actions export-hide"><label aria-label={`更换${city.name}封面`} title="更换封面" onClick={(event) => event.stopPropagation()}>▣<input type="file" accept="image/*" onChange={(event) => event.target.files?.[0] && onCover(event.target.files[0])} /></label><button aria-label={`编辑${city.name}`} onClick={(event) => { event.stopPropagation(); window.dispatchEvent(new CustomEvent("travel-city-edit", { detail: city.id })); }}>✎</button><button aria-label={`删除${city.name}`} onClick={(event) => { event.stopPropagation(); window.dispatchEvent(new CustomEvent("travel-city-remove", { detail: city.id })); }}>×</button></div>
       <div className="city-cover-copy">
         <button className="plain-city-button" onClick={onOpen}>
@@ -42,7 +42,7 @@ export function CityCard({ city, active, onOpen, onCover }: { city: City; active
   );
 }
 
-export function TicketCard({ ticket, city }: { ticket: Ticket; city?: City }) {
+export function TicketCard({ ticket, city, onEdit }: { ticket: Ticket; city?: City; onEdit: () => void }) {
   return (
     <article className={`ticket-card kind-${ticket.kind}`} style={{ backgroundColor: ticket.color }}>
       <div className="ticket-mark"><span>{ticket.kind === "火车票" ? "▥" : ticket.kind === "酒店" ? "⌂" : "✦"}</span><small>{ticket.kind}</small></div>
@@ -52,6 +52,7 @@ export function TicketCard({ ticket, city }: { ticket: Ticket; city?: City }) {
         <div className="ticket-fields"><span><small>日期</small>{ticket.date}</span><span><small>时间</small>{ticket.time}</span><span><small>信息</small>{ticket.meta}</span></div>
       </div>
       <div className="ticket-stub">{ticket.qrCode ? <img className="ticket-qr" src={ticket.qrCode} alt={`${ticket.title}二维码`} /> : <span className="fake-code">{ticket.code}</span>}<small>{city?.name || "旅程"}</small></div>
+      <button className="ticket-edit export-hide" onClick={onEdit} aria-label={`编辑${ticket.title}`}>✎ 编辑</button>
     </article>
   );
 }
@@ -88,7 +89,7 @@ export function PlaceRow({
             <p>{place.summary || "点一下魔法棒，补上这一站的看点。"}</p>
             {!!place.highlights.length && <div className="highlight-list">{place.highlights.map((item) => <span key={item}>{item}</span>)}</div>}
           </div>
-          <div className={`place-media ${place.image ? "has-image" : ""}`}>
+          <div className={`place-media ${place.image ? "has-image" : ""} gallery-${Math.min(6, place.gallery?.length || 0)}`}>
             {place.image ? <img className="place-hero-image" src={place.image} alt={`${place.name}图片`} /> : <div className={`place-media-empty category-${place.category}`}><span>{categoryIcon[place.category]}</span><small>给这一站加一张大图</small></div>}
             {!!place.gallery?.length && <div className="place-gallery">{place.gallery.map((image, galleryIndex) => <img key={`${place.id}-${galleryIndex}`} src={image} alt={`${place.name}补充图片 ${galleryIndex + 1}`} />)}</div>}
             <label className="place-media-add">＋ {place.image ? "补充图片" : "添加图片"}<input type="file" accept="image/*" multiple onChange={(event) => { const files = Array.from(event.target.files || []); if (files.length) onImages(files); event.target.value = ""; }} /></label>

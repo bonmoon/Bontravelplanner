@@ -1,7 +1,8 @@
-node_modules/
-dist/
-.DS_Store
-*.log
+node_modules
+dist
+output
 *.tsbuildinfo
-.playwright-cli/
-output/
+vite.config.js
+vite.config.d.ts
+.DS_Store
+.playwright-cli
