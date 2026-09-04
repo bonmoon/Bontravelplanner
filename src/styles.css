@@ -146,7 +146,7 @@ a { color: inherit; }
 .city-cover-art { position: absolute; z-index: 1; inset: 0; display: block; overflow: hidden; pointer-events: none; }
 .city-cover-art input { display: none; }
 .city-cover-art > span { width: 70px; height: 70px; display: grid; place-items: center; border: 2px solid rgba(41, 40, 33, .25); border-radius: 25px 19px 28px 21px; background: rgba(255, 253, 248, .42); font: 35px Georgia, serif; transform: rotate(8deg); }
-.city-cover-art img { position: absolute; inset: 0; width: 100%; height: 100%; min-width: 100%; min-height: 100%; display: block; object-fit: contain; object-position: center; background: rgba(255, 250, 240, .45); }
+.city-cover-art img { position: absolute; inset: 0; width: 100%; height: 100%; min-width: 100%; min-height: 100%; display: block; object-fit: cover; object-position: center; }
 .city-add-card { min-width: 100px; min-height: 204px; display: grid; place-content: center; gap: 8px; border: 1px dashed #cfc1ae; border-radius: 18px; background: #fbf7ef; color: var(--muted); font-size: 24px; }
 .city-add-card span { font-size: 9px; }
 .trip-workspace { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; margin-top: 14px; align-items: start; }
@@ -171,12 +171,12 @@ a { color: inherit; }
 .place-image input { display: none; }
 .place-image-action { position: absolute; right: 7px; bottom: 7px; padding: 4px 6px; border-radius: 7px; background: rgba(255, 253, 248, .88); color: #423b34; font: 750 7px Inter, sans-serif; box-shadow: 0 2px 7px rgba(55, 42, 30, .13); }
 .place-media { position: relative; margin-top: 10px; min-height: 168px; overflow: hidden; border: 1px solid #ded4c5; border-radius: 22px 17px 24px 19px; background: #eee6da; }
-.place-hero-image { display: block; width: 100%; height: clamp(180px, 25vw, 290px); object-fit: contain; background: #eee6da; }
+.place-hero-image { display: block; width: 100%; height: clamp(180px, 25vw, 290px); object-fit: cover; }
 .place-media-empty { min-height: 168px; display: grid; place-content: center; justify-items: center; gap: 8px; color: #645d54; }
 .place-media-empty > span { font: 32px Georgia, serif; }
 .place-media-empty small { font-size: 8px; }
 .place-gallery { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; padding: 7px; background: #fffaf2; }
-.place-gallery img { width: 100%; height: 88px; object-fit: contain; border-radius: 12px 9px 13px 10px; background: #eee6da; }
+.place-gallery img { width: 100%; height: 88px; object-fit: cover; border-radius: 12px 9px 13px 10px; }
 .place-media-add { position: absolute; right: 10px; bottom: 10px; padding: 7px 10px; border: 1px solid rgba(74,58,42,.18); border-radius: 10px 8px 11px 9px; background: rgba(255,253,248,.9); font-size: 8px; font-weight: 750; cursor: pointer; }
 .place-media-add input { display: none; }
 .category-景点 { background: #dce8d8; color: #557554; }
@@ -260,7 +260,7 @@ a { color: inherit; }
 .ticket-view-toggle button { min-height: 34px; padding: 7px 10px; border: 0; border-radius: 8px; background: transparent; color: var(--ink); font-size: 8px; font-weight: 800; }
 .ticket-view-toggle button.active { background: var(--ink); color: #fffaf0; }
 .ticket-list { overflow: hidden; border: 2px solid var(--ink); border-radius: 18px; background: var(--card); box-shadow: 4px 5px 0 rgba(26,39,68,.14); }
-.ticket-list article { display: grid; grid-template-columns: 96px 66px minmax(0, 1fr) minmax(125px, 180px) 70px; gap: 13px; align-items: center; min-height: 74px; padding: 13px 16px; border-bottom: 1px solid var(--line); }
+.ticket-list article { display: grid; grid-template-columns: 96px 66px minmax(0, 1fr) minmax(125px, 180px) 102px; gap: 13px; align-items: center; min-height: 74px; padding: 13px 16px; border-bottom: 1px solid var(--line); }
 .ticket-list article:last-child { border-bottom: 0; }
 .ticket-list time { font: 800 10px ui-monospace, monospace; color: var(--red); }
 .ticket-list-kind { padding: 6px 7px; border: 1px solid var(--line); background: var(--gold); font-size: 8px; font-weight: 800; text-align: center; }
@@ -288,6 +288,16 @@ a { color: inherit; }
 .ticket-qr { width: 78px; height: 78px; object-fit: contain; padding: 4px; border-radius: 7px; background: #fff; }
 .fake-code { padding: 12px 6px; border: 2px solid var(--ink); font: 700 9px ui-monospace, monospace; letter-spacing: .06em; }
 .ticket-stub small { font-size: 8px; }
+.ticket-image-add { padding: 5px 6px; border: 1px dashed rgba(26,39,68,.45); background: rgba(255,250,240,.72); color: var(--ink); font-size: 7px; font-weight: 800; }
+.ticket-stub.has-ticket-image { display: block; padding: 0; overflow: hidden; }
+.ticket-image-preview { position: relative; width: 100%; height: 100%; min-height: 176px; display: block; overflow: hidden; padding: 0; border: 0; background: #e8dfd2; cursor: zoom-in; }
+.ticket-image-preview img { width: 100%; height: 100%; min-height: 176px; display: block; object-fit: cover; object-position: center; }
+.ticket-image-preview span { position: absolute; right: 6px; bottom: 6px; padding: 4px 5px; background: rgba(255,250,240,.88); color: var(--ink); font-size: 6px; font-weight: 800; }
+.ticket-image-lightbox { position: fixed; inset: 0; z-index: 180; display: grid; place-items: center; padding: 20px; background: rgba(16,20,30,.82); }
+.ticket-image-lightbox section { position: relative; width: min(900px, 94vw); max-height: 92vh; display: grid; justify-items: center; gap: 10px; padding: 18px; border: 2px solid #fffaf0; background: #1a2744; box-shadow: 10px 10px 0 rgba(0,0,0,.22); }
+.ticket-image-lightbox img { max-width: 100%; max-height: calc(92vh - 72px); display: block; object-fit: contain; }
+.ticket-image-lightbox strong { color: #fffaf0; font-size: 10px; }
+.ticket-image-lightbox section > button { position: absolute; z-index: 2; top: 9px; right: 9px; width: 36px; height: 36px; padding: 0; border: 2px solid var(--ink); background: #fffaf0; color: var(--ink); font-size: 20px; }
 .expense-layout { display: grid; grid-template-columns: 310px minmax(0, 1fr); gap: 14px; align-items: start; }
 .expense-summary { min-height: 245px; padding: 25px; border: 1px solid #dcc8a5; border-radius: 25px 20px 27px 22px; background: #f4e4c6; transform: rotate(-.4deg); }
 .expense-summary > small { color: #76634c; font-size: 9px; }
@@ -658,9 +668,9 @@ a { color: inherit; }
 .highlight-list span { border: 0; border-radius: 0; background: var(--gold); color: var(--ink); font-weight: 750; }
 .place-media { margin-top: 13px; min-height: 240px; border: 3px solid var(--ink); border-radius: 22px; background: #e8c547; box-shadow: 4px 4px 0 rgba(26,39,68,.13); }
 .place-media.has-image { display: block; min-height: 0; background: #fffaf0; }
-.place-hero-image { width: 100%; height: clamp(260px, 33vw, 480px); min-height: 0; display: block; object-fit: contain; object-position: center; background: #eee6da; }
+.place-hero-image { width: 100%; height: clamp(260px, 33vw, 480px); min-height: 0; display: block; object-fit: cover; object-position: center; }
 .place-gallery { padding: 3px; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); align-content: stretch; background: var(--ink); gap: 3px; }
-.place-gallery img { height: auto; min-height: 0; aspect-ratio: 4 / 3; border-radius: 0; object-fit: contain; background: #eee6da; }
+.place-gallery img { height: auto; min-height: 0; aspect-ratio: 4 / 3; border-radius: 0; object-fit: cover; }
 .place-media-add { right: 10px; bottom: 10px; min-height: 38px; display: flex; align-items: center; justify-content: center; gap: 4px; border: 2px solid var(--ink); border-radius: 999px; background: #fffaf0; color: var(--ink); box-shadow: 3px 3px 0 rgba(26,39,68,.2); }
 .place-media-add span { font-size: 17px; line-height: 1; }
 .place-media-add b { font-size: 8px; }
@@ -725,7 +735,7 @@ a { color: inherit; }
   .ticket-card-actions { top: -12px; right: 8px; }
   .tickets-page .page-intro.row { gap: 12px; }
   .ticket-page-actions { width: 100%; justify-content: space-between; }
-  .ticket-list article { grid-template-columns: 70px 52px minmax(0, 1fr) 62px; gap: 8px; padding: 11px 10px; }
+  .ticket-list article { grid-template-columns: 70px 52px minmax(0, 1fr) 94px; gap: 8px; padding: 11px 10px; }
   .ticket-list article > p { grid-column: 3; }
   .ticket-list-actions { grid-column: 4; grid-row: 1 / span 2; }
   .settings-grid { grid-template-columns: 1fr; }
