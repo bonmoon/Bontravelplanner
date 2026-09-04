@@ -4,6 +4,7 @@ const DB_NAME = "travel-card-studio";
 const STORE = "documents";
 const DOC_KEY = "current";
 const SETTINGS_KEY = "travel-card-assistant";
+const DEEPSEEK_BASE_URL = "https://api.deepseek.com";
 
 function openDatabase(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -41,10 +42,13 @@ export async function saveDocument(document: TravelDocument): Promise<void> {
 }
 
 export function loadAssistantSettings(): AssistantSettings {
-  const defaults: AssistantSettings = { baseUrl: "/api/deepseek", apiKey: "", model: "deepseek-v4-flash", musicProvider: "youtube", musicLibrary: [] };
+  const defaults: AssistantSettings = { baseUrl: DEEPSEEK_BASE_URL, apiKey: "", model: "deepseek-v4-flash", musicProvider: "youtube", musicLibrary: [] };
   try {
     const saved = { ...defaults, ...JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}") };
-    if (/^https:\/\/api\.deepseek\.com(?:\/chat\/completions)?\/?$/i.test(saved.baseUrl)) saved.baseUrl = "/api/deepseek";
+    const baseUrl = String(saved.baseUrl || "").trim();
+    // Older builds rewrote the official API to a local-only proxy. Migrate those
+    // settings so the static GitHub Pages build can call DeepSeek directly.
+    if (!baseUrl || baseUrl === "/api/deepseek" || /bonmoon\.github\.io\/.*\/api\/deepseek\/?$/i.test(baseUrl)) saved.baseUrl = DEEPSEEK_BASE_URL;
     if (saved.model === "deepseek-chat" || saved.model === "deepseek-reasoner") saved.model = "deepseek-v4-flash";
     return saved;
   } catch {

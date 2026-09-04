@@ -2,10 +2,11 @@ import type { AssistantCommandResult, AssistantOperation, AssistantSettings, Cit
 import { uid } from "./types";
 
 type JsonObject = Record<string, unknown>;
+const OFFICIAL_DEEPSEEK_URL = "https://api.deepseek.com";
 
 function endpointFor(value: string): string {
   let base = value.trim().replace(/\/+$/, "");
-  if (!base) base = "/api/deepseek";
+  if (!base) base = OFFICIAL_DEEPSEEK_URL;
   if (base.startsWith("/") && window.location.protocol === "file:") base = `http://127.0.0.1:4173${base}`;
   if (/\/chat\/completions$/i.test(base)) return base;
   return `${base}/chat/completions`;
@@ -13,7 +14,7 @@ function endpointFor(value: string): string {
 
 function modelsEndpointFor(value: string): string {
   let base = value.trim().replace(/\/+$/, "");
-  if (!base) base = "/api/deepseek";
+  if (!base) base = OFFICIAL_DEEPSEEK_URL;
   if (base.startsWith("/") && window.location.protocol === "file:") base = `http://127.0.0.1:4173${base}`;
   base = base.replace(/\/chat\/completions$/i, "");
   return `${base}/models`;
@@ -72,7 +73,7 @@ async function ask(
     });
   } catch (error) {
     if (controller.signal.aborted) throw new Error("模型等待超时，没有写入任何数据，请重试或切换 V4 Flash");
-    throw new Error(settings.baseUrl.startsWith("/") ? "本地连接没有启动，请从“启动旅卡”进入" : "服务地址无法连接，请检查地址或改用本地连接");
+    throw new Error(settings.baseUrl.startsWith("/") ? "本地连接没有启动，请改用官方地址 https://api.deepseek.com" : "DeepSeek 官方服务暂时无法连接，请检查网络后重试");
   } finally {
     window.clearTimeout(timeout);
   }
@@ -92,7 +93,7 @@ export async function testAssistantConnection(settings: AssistantSettings): Prom
     response = await fetch(modelsEndpointFor(settings.baseUrl), { headers: { Authorization: `Bearer ${settings.apiKey.trim()}` }, signal: controller.signal });
   } catch {
     if (controller.signal.aborted) throw new Error("连接测试超时，请确认本地窗口仍在运行");
-    throw new Error(settings.baseUrl.startsWith("/") ? "本地连接没有启动" : "服务地址无法连接");
+    throw new Error(settings.baseUrl.startsWith("/") ? "本地连接没有启动，请改用官方地址 https://api.deepseek.com" : "DeepSeek 官方服务暂时无法连接");
   } finally {
     window.clearTimeout(timeout);
   }

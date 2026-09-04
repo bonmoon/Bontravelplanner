@@ -21,10 +21,10 @@ npm run dev
 打开“设置 → 行程助手”，填写服务地址、访问密钥和模型。默认地址为：
 
 ```text
-https://api.deepseek.com/chat/completions
+https://api.deepseek.com
 ```
 
-连接信息保存在当前浏览器，不需要额外服务。
+GitHub Pages 会直接连接官方 API；连接信息只保存在当前浏览器，不需要额外服务。旧版本保存的 `/api/deepseek` 会自动迁移到官方地址。
 
 ## 构建
 
