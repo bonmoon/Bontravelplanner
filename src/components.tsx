@@ -43,7 +43,7 @@ export function CityCard({ city, tripStartDate, active, onOpen, onCover }: { cit
   );
 }
 
-export function TicketCard({ ticket, city, onEdit, onRemove }: { ticket: Ticket; city?: City; onEdit: () => void; onRemove: () => void }) {
+export function TicketCard({ ticket, city, onEdit, onRemove, onPreview }: { ticket: Ticket; city?: City; onEdit: () => void; onRemove: () => void; onPreview: () => void }) {
   return (
     <article className={`ticket-card kind-${ticket.kind}`} style={{ backgroundColor: ticket.color }}>
       <div className="ticket-mark"><span>{ticket.kind === "火车票" ? "▥" : ticket.kind === "酒店" ? "⌂" : "✦"}</span><small>{ticket.kind}</small></div>
@@ -52,7 +52,7 @@ export function TicketCard({ ticket, city, onEdit, onRemove }: { ticket: Ticket;
         <h3>{ticket.title}</h3>
         <div className="ticket-fields"><span><small>日期</small>{ticket.date}</span><span><small>时间</small>{ticket.time}</span><span><small>信息</small>{ticket.meta}</span></div>
       </div>
-      <div className="ticket-stub">{ticket.qrCode ? <img className="ticket-qr" src={ticket.qrCode} alt={`${ticket.title}二维码`} /> : <span className="fake-code">{ticket.code}</span>}<small>{city?.name || "旅程"}</small></div>
+      <div className={`ticket-stub ${ticket.image ? "has-ticket-image" : ""}`}>{ticket.image ? <button className="ticket-image-preview" onClick={onPreview} aria-label={`查看${ticket.title}完整图片`}><img src={ticket.image} alt={`${ticket.title}票据`} /><span>查看完整图片</span></button> : <>{ticket.qrCode ? <img className="ticket-qr" src={ticket.qrCode} alt={`${ticket.title}二维码`} /> : <span className="fake-code">{ticket.code}</span>}<button className="ticket-image-add export-hide" onClick={onEdit}>＋ 添加图片</button><small>{city?.name || "旅程"}</small></>}</div>
       <div className="ticket-card-actions export-hide"><button className="ticket-edit" onClick={onEdit} aria-label={`编辑${ticket.title}`}>✎ 编辑</button><button className="ticket-delete" onClick={onRemove} aria-label={`删除${ticket.title}`}>× 删除</button></div>
     </article>
   );
