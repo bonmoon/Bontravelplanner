@@ -41,7 +41,7 @@ export async function importTripPackage(file: File): Promise<Trip> {
       });
       return { id: uid("day"), date: text(day.date, "Day 1"), weekday: text(day.weekday), title: text(day.title, "顺路的一天"), places: places.sort((a, b) => a.time.localeCompare(b.time)) };
     });
-    return { id: uid("city"), name: text(source.name, "新的城市"), englishName: text(source.englishName, text(source.name, "New city")), startDate, endDate, dates: text(source.dates, cityDateRange(startDate, endDate)), note: text(source.note, "给这座城市留一点偶遇。"), color: text(source.color, "#e8c547"), cover: asset(source.cover), days };
+    return { id: uid("city"), name: text(source.name, "新的城市"), englishName: text(source.englishName, text(source.name, "New city")), country: text(source.country), startDate, endDate, dates: text(source.dates, cityDateRange(startDate, endDate)), note: text(source.note, "给这座城市留一点偶遇。"), color: text(source.color, "#e8c547"), cover: asset(source.cover), journal: [], days };
   });
   if (!cities.length) throw new Error("trip.json 至少需要一座城市");
   const startDate = text(root.startDate, cities[0].startDate || "待定");
@@ -57,7 +57,7 @@ function bytesToBase64(bytes: Uint8Array): string {
 export function downloadTripPackageTemplate(): void {
   const template = {
     title: "我的欧洲旅行", startDate: "2026-09-24", endDate: "2026-10-06", subtitle: "城市、美食与慢火车", cover: "images/trip-cover.jpg",
-    cities: [{ name: "布鲁塞尔", englishName: "Brussels", startDate: "2026-09-24", endDate: "2026-09-25", note: "大广场、漫画墙与啤酒馆。", color: "#e8c547", cover: "images/brussels-cover.jpg", days: [{ date: "2026-09-24", weekday: "周四", title: "老城漫步", places: [{ name: "布鲁塞尔大广场", mapQuery: "Grand Place, Brussels, Belgium", category: "景点", time: "15:00", endTime: "16:30", duration: "1.5 小时", summary: "从市政厅尖塔开始认识布鲁塞尔。", highlights: ["市政厅", "行会建筑", "蓝调时刻"], images: ["images/brussels/grand-place-1.jpg", "images/brussels/grand-place-2.jpg"] }] }] }],
+    cities: [{ name: "布鲁塞尔", englishName: "Brussels", country: "Belgium", startDate: "2026-09-24", endDate: "2026-09-25", note: "大广场、漫画墙与啤酒馆。", color: "#e8c547", cover: "images/brussels-cover.jpg", days: [{ date: "2026-09-24", weekday: "周四", title: "老城漫步", places: [{ name: "布鲁塞尔大广场", mapQuery: "Grand Place, Brussels, Belgium", category: "景点", time: "15:00", endTime: "16:30", duration: "1.5 小时", summary: "从市政厅尖塔开始认识布鲁塞尔。", highlights: ["市政厅", "行会建筑", "蓝调时刻"], images: ["images/brussels/grand-place-1.jpg", "images/brussels/grand-place-2.jpg"] }] }] }],
   };
   const guide = "1. 编辑 trip.json。\n2. 把照片放进 images 文件夹，路径与 JSON 完全一致。\n3. 将 trip.json 和 images 一起压缩成 ZIP。\n4. 在旅卡设置中选择“导入素材包”，确认后覆盖当前旅行。\n每个地点最多读取 12 张图片；城市会按 startDate 自动排序。";
   const zipped = zipSync({ "trip.json": strToU8(JSON.stringify(template, null, 2)), "使用说明.txt": strToU8(guide) }, { level: 6 });

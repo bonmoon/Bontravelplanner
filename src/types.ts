@@ -26,16 +26,26 @@ export interface DayPlan {
   places: Place[];
 }
 
+export interface JournalEntry {
+  id: string;
+  date: string;
+  title: string;
+  text: string;
+  images: string[];
+}
+
 export interface City {
   id: string;
   name: string;
   englishName: string;
+  country?: string;
   startDate?: string;
   endDate?: string;
   dates: string;
   note: string;
   color: string;
   cover?: string;
+  journal?: JournalEntry[];
   days: DayPlan[];
 }
 
@@ -51,6 +61,9 @@ export interface Ticket {
   code: string;
   color: string;
   image?: string;
+  attachment?: string;
+  attachmentType?: "image" | "pdf";
+  includesBreakfast?: boolean;
   qrCode?: string;
 }
 

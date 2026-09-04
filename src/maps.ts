@@ -12,15 +12,17 @@ function queryFromMapUrl(value?: string): string {
 }
 
 function placeQuery(place: Place | string, city?: City): string {
-  if (typeof place === "string") return place;
-  const name = place.mapQuery || queryFromMapUrl(place.mapUrl) || place.name;
-  const cityHint = city?.englishName || city?.name || "";
-  return cityHint && !name.toLowerCase().includes(cityHint.toLowerCase()) ? `${name}, ${cityHint}` : name;
+  const name = typeof place === "string" ? place : place.mapQuery || queryFromMapUrl(place.mapUrl) || place.name;
+  const cityNames = [city?.englishName?.split(/[\/·]/)[0].trim(), city?.name].filter(Boolean) as string[];
+  const location = [...cityNames, city?.country].filter((value, index, values) => value && values.findIndex((item) => item?.toLowerCase() === value.toLowerCase()) === index).join(", ");
+  const normalized = name.toLowerCase();
+  const alreadyScoped = cityNames.some((value) => normalized.includes(value.toLowerCase())) || (!!city?.country && normalized.includes(city.country.toLowerCase()));
+  return location && !alreadyScoped ? `${name}, ${location}` : name;
 }
 
 export function appleMapsUrl(place: Place | string, city?: City): string {
   if (typeof place !== "string" && place.mapUrl?.includes("maps.apple.com")) return place.mapUrl;
-  return `https://maps.apple.com/search?query=${encodeURIComponent(placeQuery(place, city))}`;
+  return `https://maps.apple.com/?q=${encodeURIComponent(placeQuery(place, city))}`;
 }
 
 export function googleMapsUrl(place: Place | string, city?: City): string {
@@ -33,7 +35,7 @@ export function appleRouteUrl(places: Place[], city?: City): string {
   if (places.length === 1) return appleMapsUrl(places[0], city);
   const destination = placeQuery(places.at(-1)!, city);
   const start = placeQuery(places[0], city);
-  return `https://maps.apple.com/directions?source=${encodeURIComponent(start)}&destination=${encodeURIComponent(destination)}&mode=walking`;
+  return `https://maps.apple.com/?saddr=${encodeURIComponent(start)}&daddr=${encodeURIComponent(destination)}&dirflg=w`;
 }
 
 export function googleRouteUrl(places: Place[], city?: City): string {

@@ -155,6 +155,26 @@ a { color: inherit; }
 .section-title-row { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 4px 3px 20px; border-bottom: 1px solid var(--line); }
 .section-title-row h2 { margin: 6px 0 5px; font: 700 23px Georgia, "Songti SC", serif; letter-spacing: -.025em; }
 .section-title-row p { margin: 0; color: var(--muted); font-size: 10px; }
+.city-journal { margin: 18px 0 4px; padding: 16px; border: 2px solid var(--ink); border-radius: 18px; background: #f4dfb6; box-shadow: 4px 4px 0 rgba(26,39,68,.14); }
+.city-journal > header { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.city-journal h3 { margin: 4px 0 0; font: 750 18px Georgia, "Songti SC", serif; }
+.journal-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.journal-grid article { overflow: hidden; border: 2px solid var(--ink); background: #fffaf0; }
+.journal-images { height: 180px; display: grid; grid-template-columns: repeat(2, 1fr); grid-template-rows: repeat(2, 1fr); gap: 3px; background: var(--ink); }
+.journal-images img { width: 100%; height: 100%; display: block; object-fit: cover; }
+.journal-images.count-1 img { grid-column: 1 / -1; grid-row: 1 / -1; }
+.journal-images.count-2 img { grid-row: 1 / -1; }
+.journal-images.count-3 img:first-child { grid-row: 1 / -1; }
+.journal-image-empty { height: 110px; display: grid; place-items: center; background: var(--blue); color: white; font: 900 18px ui-monospace, monospace; letter-spacing: .12em; }
+.journal-copy { padding: 13px; }
+.journal-copy time { color: var(--red); font: 800 8px ui-monospace, monospace; }
+.journal-copy h4 { margin: 6px 0 7px; font: 750 16px Georgia, "Songti SC", serif; }
+.journal-copy p { margin: 0; color: #485064; font-size: 9px; line-height: 1.65; white-space: pre-wrap; }
+.journal-empty-card { width: 100%; min-height: 112px; display: grid; place-content: center; justify-items: center; gap: 5px; border: 2px dashed var(--ink); background: #fff7df; color: var(--ink); }
+.journal-empty-card span { font-size: 23px; }
+.journal-empty-card strong { font: 750 13px Georgia, "Songti SC", serif; }
+.journal-empty-card small { color: var(--muted); font-size: 8px; }
+.journal-form textarea { min-height: 150px; }
 .day-section { padding: 22px 2px 4px; border-bottom: 1px solid var(--line); }
 .day-section:last-child { border-bottom: 0; }
 .day-section > header { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 0 4px 16px; }
@@ -231,6 +251,12 @@ a { color: inherit; }
 .library-trip.add { display: grid; place-content: center; border-style: dashed; background: #fbf7ef; text-align: center; }
 .library-trip.add > span { font-size: 25px; }
 .library-trip.add h3 { margin: 12px 0 0; font-size: 16px; }
+.map-search-desk { margin-bottom: 13px; padding: 12px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: end; border: 2px solid var(--ink); border-radius: 16px; background: #fffaf0; box-shadow: 3px 4px 0 rgba(26,39,68,.13); }
+.map-search-desk label { display: grid; gap: 5px; }
+.map-search-desk label span { color: var(--red); font: 800 8px ui-monospace, monospace; }
+.map-search-desk input { min-height: 42px; padding: 9px 11px; border: 1px solid var(--line); background: #f8f2e8; color: var(--ink); font-size: 10px; outline: none; }
+.map-search-desk > div { display: flex; gap: 7px; }
+.map-search-desk a { min-height: 42px; padding: 9px 12px; display: flex; align-items: center; border: 2px solid var(--ink); background: var(--gold); text-decoration: none; font-size: 8px; font-weight: 800; }
 .map-layout { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(280px, .7fr); gap: 14px; }
 .paper-map { position: relative; min-height: 570px; overflow: hidden; border: 1px solid #cfc4b5; border-radius: 26px 21px 29px 23px; background-color: #e5ebdc; box-shadow: var(--shadow); }
 .paper-map:before, .paper-map:after { content: ""; position: absolute; border: 16px solid #d5ddc9; border-radius: 45%; }
@@ -293,9 +319,17 @@ a { color: inherit; }
 .ticket-image-preview { position: relative; width: 100%; height: 100%; min-height: 176px; display: block; overflow: hidden; padding: 0; border: 0; background: #e8dfd2; cursor: zoom-in; }
 .ticket-image-preview img { width: 100%; height: 100%; min-height: 176px; display: block; object-fit: cover; object-position: center; }
 .ticket-image-preview span { position: absolute; right: 6px; bottom: 6px; padding: 4px 5px; background: rgba(255,250,240,.88); color: var(--ink); font-size: 6px; font-weight: 800; }
+.ticket-pdf-cover { position: absolute !important; inset: 0; display: grid; place-content: center; gap: 5px; background: #f4e7d7 !important; color: var(--red) !important; }
+.ticket-pdf-cover b { font: 900 22px ui-monospace, monospace; letter-spacing: -.08em; }
+.ticket-pdf-cover small { font-size: 6px; color: var(--muted); }
+.breakfast-badge { width: max-content; margin: -12px 0 11px; padding: 3px 8px 3px 3px; display: flex; align-items: center; gap: 5px; border: 2px solid var(--ink); border-radius: 999px; background: #fff4ce; color: var(--ink); font-size: 7px; font-weight: 850; }
+.breakfast-badge img { width: 24px; height: 24px; padding: 3px; object-fit: contain; border-radius: 50%; background: var(--gold); }
+.breakfast-list-icon { width: 22px; height: 22px; margin-left: 6px; display: inline-grid; place-items: center; vertical-align: middle; border: 1px solid var(--ink); border-radius: 50%; background: #fff4ce; }
+.breakfast-list-icon img { width: 18px; height: 18px; object-fit: contain; }
 .ticket-image-lightbox { position: fixed; inset: 0; z-index: 180; display: grid; place-items: center; padding: 20px; background: rgba(16,20,30,.82); }
 .ticket-image-lightbox section { position: relative; width: min(900px, 94vw); max-height: 92vh; display: grid; justify-items: center; gap: 10px; padding: 18px; border: 2px solid #fffaf0; background: #1a2744; box-shadow: 10px 10px 0 rgba(0,0,0,.22); }
 .ticket-image-lightbox img { max-width: 100%; max-height: calc(92vh - 72px); display: block; object-fit: contain; }
+.ticket-image-lightbox iframe { width: min(860px, 88vw); height: calc(92vh - 72px); display: block; border: 0; background: #fff; }
 .ticket-image-lightbox strong { color: #fffaf0; font-size: 10px; }
 .ticket-image-lightbox section > button { position: absolute; z-index: 2; top: 9px; right: 9px; width: 36px; height: 36px; padding: 0; border: 2px solid var(--ink); background: #fffaf0; color: var(--ink); font-size: 20px; }
 .expense-layout { display: grid; grid-template-columns: 310px minmax(0, 1fr); gap: 14px; align-items: start; }
@@ -388,6 +422,24 @@ a { color: inherit; }
 .image-picker input { display: none; }
 .image-picker em { position: absolute; right: 9px; bottom: 9px; padding: 5px 7px; border-radius: 8px; background: rgba(255,253,248,.9); font-size: 7px; font-style: normal; font-weight: 750; }
 .image-picker > i { position: absolute; left: 9px; bottom: 9px; color: #a34e43; font-size: 7px; font-style: normal; }
+.attachment-picker { position: relative; min-height: 150px; margin-bottom: 16px; display: grid !important; place-items: center; overflow: hidden; border: 2px dashed var(--ink); border-radius: 18px; background: #f7efe3; cursor: pointer; }
+.attachment-picker > img { width: 100%; height: 190px; display: block; object-fit: cover; }
+.attachment-picker > span { display: grid; justify-items: center; gap: 5px; color: #655b50; }
+.attachment-picker > span > b { font-size: 24px; }
+.attachment-picker > span > strong { font-size: 10px; }
+.attachment-picker > span > small { color: var(--muted); font-size: 7px; }
+.attachment-picker input { display: none; }
+.attachment-picker em { position: absolute; right: 9px; bottom: 9px; padding: 5px 7px; background: rgba(255,253,248,.92); font-size: 7px; font-style: normal; font-weight: 800; }
+.attachment-picker > i { position: absolute; left: 9px; bottom: 9px; color: #a34e43; font-size: 7px; font-style: normal; }
+.attachment-pdf-preview { align-self: stretch; width: 100%; place-content: center; background: #f2e0cc; color: var(--red) !important; }
+.attachment-pdf-preview > b { font: 900 32px ui-monospace, monospace; }
+.breakfast-choice { grid-template-columns: 54px minmax(0, 1fr); column-gap: 10px !important; align-items: center; padding: 10px; border: 2px solid var(--ink); border-radius: 16px; background: #fffaf0; cursor: pointer; }
+.breakfast-choice.active { background: #fff1b9; box-shadow: 3px 3px 0 rgba(26,39,68,.15); }
+.breakfast-choice input { display: none; }
+.breakfast-choice-icon { grid-row: 1 / span 2; width: 52px; height: 52px; display: grid; place-items: center; border: 2px solid var(--ink); border-radius: 50%; background: var(--gold); }
+.breakfast-choice-icon img { width: 43px; height: 43px; object-fit: contain; }
+.breakfast-choice strong { align-self: end; font-size: 10px; }
+.breakfast-choice small { align-self: start; color: var(--muted); font-size: 7px; }
 .multi-image-picker { margin-bottom: 16px; }
 .multi-image-preview { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; }
 .multi-image-preview:empty { display: none; }
@@ -722,6 +774,13 @@ a { color: inherit; }
   .city-card-actions { top: 8px; right: 7px; }
   .city-card-actions button, .city-card-actions label { width: 32px; height: 32px; }
   .itinerary-card { padding: 14px 10px; }
+  .itinerary-heading-actions { max-width: 150px; flex-wrap: wrap; justify-content: flex-end; }
+  .itinerary-heading-actions .text-button { min-height: 32px; padding: 6px 8px; font-size: 7px; }
+  .city-journal { margin-top: 12px; padding: 11px; }
+  .city-journal > header { align-items: center; }
+  .city-journal h3 { font-size: 15px; }
+  .journal-grid { grid-template-columns: 1fr; }
+  .journal-images { height: 210px; }
   .day-section > div { grid-template-columns: 1fr; gap: 5px; }
   .place-with-leg, .place-with-leg:nth-child(n) { grid-column: 1; border-top-width: 7px; }
   .place-row { grid-template-columns: minmax(0, 1fr) 31px; }
@@ -732,6 +791,15 @@ a { color: inherit; }
   .place-gallery { grid-template-columns: repeat(3, minmax(0, 1fr)); min-height: 0; }
   .place-gallery img { min-height: 0; }
   .ticket-card { grid-template-columns: 48px minmax(0, 1fr) 74px; }
+  .ticket-main { padding-inline: 10px; }
+  .breakfast-badge { margin-top: -8px; padding-right: 5px; font-size: 6px; }
+  .breakfast-badge img { width: 21px; height: 21px; }
+  .ticket-image-lightbox { padding: 8px; }
+  .ticket-image-lightbox section { width: 98vw; padding: 8px; }
+  .ticket-image-lightbox iframe { width: calc(98vw - 20px); height: calc(90vh - 48px); }
+  .map-search-desk { grid-template-columns: 1fr; }
+  .map-search-desk > div { display: grid; grid-template-columns: 1fr 1fr; }
+  .map-search-desk a { justify-content: center; padding-inline: 6px; }
   .ticket-card-actions { top: -12px; right: 8px; }
   .tickets-page .page-intro.row { gap: 12px; }
   .ticket-page-actions { width: 100%; justify-content: space-between; }
