@@ -1,5 +1,5 @@
-const CACHE = "travel-card-studio-v8";
-const SHELL = ["./","./index.html","./manifest.webmanifest","./icons/app-icon.svg","./assets/bontrip-food.png","./assets/bontrip-home.png","./assets/bontrip-ledger.png","./assets/bontrip-map.png","./assets/bontrip-travel.png","./assets/index-6WHq1B7m.css","./assets/index-wZOn-JRh.js","./assets/paws-and-passport.mp3","./assets/travel-assistant-avatar.png"];
+const CACHE = "travel-card-studio-v9";
+const SHELL = ["./","./index.html","./manifest.webmanifest","./icons/app-icon.svg","./assets/bontrip-food.png","./assets/bontrip-home.png","./assets/bontrip-ledger.png","./assets/bontrip-map.png","./assets/bontrip-travel.png","./assets/index-BgpX_C_e.css","./assets/index-Bkhtm2Rd.js","./assets/paws-and-passport.mp3","./assets/travel-assistant-avatar.png"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(SHELL)));
