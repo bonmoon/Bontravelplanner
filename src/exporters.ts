@@ -12,8 +12,9 @@ export function downloadBlob(blob: Blob, filename: string): void {
   window.setTimeout(() => URL.revokeObjectURL(link.href), 2000);
 }
 
-export function exportJson(document: TravelDocument): void {
-  downloadBlob(new Blob([JSON.stringify(document, null, 2)], { type: "application/json" }), "travel-card-backup.json");
+export function exportJson(document: TravelDocument, tripName = "旅卡"): void {
+  const date = new Date().toISOString().slice(0, 10);
+  downloadBlob(new Blob([JSON.stringify(document, null, 2)], { type: "application/json" }), `${safeName(tripName)}-iPad离线备份-${date}.json`);
 }
 
 export function exportTripHtml(trip: Trip, markup: string, styles: string): void {

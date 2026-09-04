@@ -1,5 +1,6 @@
 import type { City, DayPlan, Place, Ticket } from "./types";
 import { appleMapsUrl, googleMapsUrl } from "./maps";
+import { cityDatesFromDays } from "./dates";
 
 export const categoryIcon: Record<Place["category"], string> = {
   景点: "✦",
@@ -23,14 +24,15 @@ export function Modal({ title, eyebrow, children, onClose, wide = false }: { tit
   );
 }
 
-export function CityCard({ city, active, onOpen, onCover }: { city: City; active: boolean; onOpen: () => void; onCover: (file: File) => void }) {
+export function CityCard({ city, tripStartDate, active, onOpen, onCover }: { city: City; tripStartDate: string; active: boolean; onOpen: () => void; onCover: (file: File) => void }) {
   const placeCount = city.days.reduce((sum, day) => sum + day.places.length, 0);
+  const displayDates = cityDatesFromDays(city, tripStartDate)?.dates || city.dates;
   return (
     <article className={`city-cover-card ${city.cover ? "has-cover" : ""} ${active ? "active" : ""}`} style={{ backgroundColor: city.color }} onClick={onOpen}>
       <div className="city-card-actions export-hide"><label aria-label={`更换${city.name}封面`} title="更换封面" onClick={(event) => event.stopPropagation()}>▣<input type="file" accept="image/*" onChange={(event) => event.target.files?.[0] && onCover(event.target.files[0])} /></label><button aria-label={`编辑${city.name}`} onClick={(event) => { event.stopPropagation(); window.dispatchEvent(new CustomEvent("travel-city-edit", { detail: city.id })); }}>✎</button><button aria-label={`删除${city.name}`} onClick={(event) => { event.stopPropagation(); window.dispatchEvent(new CustomEvent("travel-city-remove", { detail: city.id })); }}>×</button></div>
       <div className="city-cover-copy">
         <button className="plain-city-button" onClick={onOpen}>
-          <strong>{city.name}</strong><span>{city.englishName}</span><small>{city.dates}</small>
+          <strong>{city.name}</strong><span>{city.englishName}</span><small>{displayDates}</small>
         </button>
         <div className="city-counts"><span>{city.days.length} 天</span><span>景点 {placeCount}</span></div>
       </div>
@@ -89,10 +91,10 @@ export function PlaceRow({
             <p>{place.summary || "点一下魔法棒，补上这一站的看点。"}</p>
             {!!place.highlights.length && <div className="highlight-list">{place.highlights.map((item) => <span key={item}>{item}</span>)}</div>}
           </div>
-          <div className={`place-media ${place.image ? "has-image" : ""} gallery-${Math.min(6, place.gallery?.length || 0)}`}>
+          <div className={`place-media ${place.image ? "has-image" : ""} ${place.gallery?.length ? "has-gallery" : ""} gallery-${Math.min(6, place.gallery?.length || 0)}`}>
             {place.image ? <img className="place-hero-image" src={place.image} alt={`${place.name}图片`} /> : <div className={`place-media-empty category-${place.category}`}><span>{categoryIcon[place.category]}</span><small>给这一站加一张大图</small></div>}
             {!!place.gallery?.length && <div className="place-gallery">{place.gallery.map((image, galleryIndex) => <img key={`${place.id}-${galleryIndex}`} src={image} alt={`${place.name}补充图片 ${galleryIndex + 1}`} />)}</div>}
-            <label className="place-media-add">＋ {place.image ? "补充图片" : "添加图片"}<input type="file" accept="image/*" multiple onChange={(event) => { const files = Array.from(event.target.files || []); if (files.length) onImages(files); event.target.value = ""; }} /></label>
+            <label className={`place-media-add ${place.image ? "icon-only" : ""}`} title={place.image ? "添加更多图片" : "添加图片"}><span aria-hidden="true">＋</span>{!place.image && <b>添加图片</b>}<input type="file" accept="image/*" multiple onChange={(event) => { const files = Array.from(event.target.files || []); if (files.length) onImages(files); event.target.value = ""; }} /></label>
           </div>
         </div>
         <div className="place-actions export-hide">

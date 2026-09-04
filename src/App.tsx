@@ -3,7 +3,7 @@ import { applyOptimizedDays, commandTrip, optimizeCity, parseExpenses, summarize
 import { CityCard, DaySection, Modal, PlaceRow, TicketCard, categoryIcon } from "./components";
 import { exportElementPng, exportJson, exportTripHtml } from "./exporters";
 import { downloadTripPackageTemplate, importTripPackage } from "./bulkPackage";
-import { cityDateRange, looseDateToIso, sortCitiesByDate } from "./dates";
+import { cityDateRange, looseDateToIso, sortCitiesByDate, syncCityDatesFromDays } from "./dates";
 import { appleMapsUrl, appleRouteUrl, googleMapsUrl, googleRouteUrl } from "./maps";
 import { sampleDocument } from "./sample";
 import { loadAssistantSettings, loadDocument, requestPersistentStorage, saveAssistantSettings, saveDocument } from "./storage";
@@ -332,10 +332,16 @@ function App() {
     try {
       const parsed = JSON.parse(await file.text()) as TravelDocument;
       if (parsed.version !== 1 || !Array.isArray(parsed.trips) || !parsed.trips.length) throw new Error();
-      setDocument(parsed);
-      showToast("旅行资料已经带回来了");
+      const restored: TravelDocument = { ...parsed, trips: parsed.trips.map((savedTrip) => ({ ...savedTrip, cities: sortCitiesByDate(savedTrip.cities.map((savedCity) => syncCityDatesFromDays(savedCity, savedTrip.startDate)), savedTrip.startDate) })) };
+      await saveDocument(restored);
+      setDocument(restored);
+      const restoredTrip = restored.trips.find((item) => item.id === restored.activeTripId) || restored.trips[0];
+      setActiveCityId(restoredTrip.cities[0]?.id || "");
+      setView("trip");
+      await requestPersistentStorage().catch(() => false);
+      showToast("离线包已保存到这台设备，图片和行程都回来了");
     } catch {
-      showToast("这个文件不是可用的旅行备份");
+      showToast("这个文件不是可用的旅卡离线包");
     }
   }
 
@@ -379,7 +385,7 @@ function App() {
               onPlaceImage={setPlaceImages}
               onNewCity={() => setModal("city")}
               onNewDay={() => updateCity((current) => ({ ...current, days: [...current.days, { id: uid("day"), date: `Day ${current.days.length + 1}`, weekday: "", title: "新的一天", places: [] }] }))}
-              onRemoveDay={(dayId) => { if (window.confirm("删除这一天？当天的地点也会一起移除。")) updateCity((current) => ({ ...current, days: current.days.filter((day) => day.id !== dayId) })); }}
+              onRemoveDay={(dayId) => { if (window.confirm("删除这一天？当天的地点也会一起移除。")) updateTrip((current) => { const cities = current.cities.map((item) => item.id === city.id ? syncCityDatesFromDays({ ...item, days: item.days.filter((day) => day.id !== dayId) }, current.startDate) : item); return { ...current, cities: sortCitiesByDate(cities, current.startDate) }; }); }}
               onNewPlace={(dayId) => { setModalDayId(dayId); setModal("place"); }}
               onSummarize={enrichPlace}
               onToggleLock={(dayId, placeId) => updateCity((current) => ({ ...current, days: current.days.map((day) => day.id === dayId ? { ...day, places: day.places.map((place) => place.id === placeId ? { ...place, locked: !place.locked } : place) } : day) }))}
@@ -394,11 +400,11 @@ function App() {
           {view === "tickets" && <TicketsView trip={trip} onAdd={() => setModal("ticket")} onEdit={(id) => { setEditingTicketId(id); setModal("editTicket"); }} />}
           {view === "expenses" && <ExpensesView trip={trip} onAdd={() => setModal("expense")} onRemove={(id) => updateTrip((current) => ({ ...current, expenses: current.expenses.filter((item) => item.id !== id) }))} />}
           {view === "assistant" && <AssistantView trip={trip} draft={chatDraft} onDraft={setChatDraft} onSend={sendChat} busy={busy === "chat"} onOptimize={prepareOptimization} onExpense={() => setModal("expense")} />}
-          {view === "settings" && <SettingsView settings={settings} onSettings={setSettings} onSave={saveSettings} onBackup={() => exportJson(document)} onImport={() => importRef.current?.click()} onBulkImport={() => bulkImportRef.current?.click()} onDownloadTemplate={downloadTripPackageTemplate} onPersist={async () => showToast(await requestPersistentStorage() ? "这台设备会尽量长久保留旅行资料" : "浏览器会继续自动保存旅行资料")} />}
+          {view === "settings" && <SettingsView settings={settings} onSettings={setSettings} onSave={saveSettings} onBackup={() => exportJson(document, trip.title)} onImport={() => importRef.current?.click()} onBulkImport={() => bulkImportRef.current?.click()} onDownloadTemplate={downloadTripPackageTemplate} onPersist={async () => showToast(await requestPersistentStorage() ? "这台设备会尽量长久保留旅行资料" : "浏览器会继续自动保存旅行资料")} />}
         </div>
       </main>
       <MobileNav view={view} onView={setView} />
-      <input ref={importRef} className="hidden" type="file" accept="application/json" onChange={(event) => event.target.files?.[0] && importBackup(event.target.files[0])} />
+      <input ref={importRef} className="hidden" type="file" accept=".json,application/json,text/json" onChange={(event) => event.target.files?.[0] && void importBackup(event.target.files[0])} />
       <input ref={bulkImportRef} className="hidden" type="file" accept=".zip,application/zip" onChange={(event) => event.target.files?.[0] && void importBulkPackage(event.target.files[0])} />
       {modal === "trip" && <NewTripModal onClose={() => setModal("none")} onCreate={(created) => { setDocument((current) => ({ ...current, trips: [created, ...current.trips], activeTripId: created.id })); setActiveCityId(created.cities[0].id); setView("trip"); setModal("none"); }} />}
       {modal === "city" && <NewCityModal tripStartDate={trip.startDate} onClose={() => setModal("none")} onCreate={(created) => { updateTrip((current) => ({ ...current, cities: sortCitiesByDate([...current.cities, created], current.startDate) })); setActiveCityId(created.id); setModal("none"); }} />}
@@ -517,7 +523,7 @@ function TripView({ refElement, trip, city, busy, onOpenCity, onCover, onEditCit
     return () => { window.removeEventListener("travel-city-edit", edit); window.removeEventListener("travel-city-remove", remove); };
   }, [onEditCity, onRemoveCity]);
   const routeTitle = trip.cities.map((item) => item.name).join(" → ");
-  return <div className="trip-page" ref={refElement}><section className="export-only export-title"><span>TRAVEL CARD · {trip.cities.length} STOPS</span><h1>{trip.title}</h1><p>{trip.startDate} — {trip.endDate}</p><small>{routeTitle}</small></section><section className="trip-heading"><div><span className="eyebrow">{routeTitle}</span><p>{trip.startDate} — {trip.endDate}</p></div><MusicCard trip={trip} busy={busy === "track"} onRandom={onRandomTrack} onAi={onAiTrack} /></section><section className="city-strip"><header><div><h2>城市卡片</h2><span>{trip.cities.length} STOPS</span></div><button className="text-button export-hide" onClick={onNewCity}>＋ 添加城市</button></header><div>{trip.cities.map((item) => <CityCard key={item.id} city={item} active={item.id === city.id} onOpen={() => onOpenCity(item.id)} onCover={(file) => onCover(item, file)} />)}<button className="city-add-card export-hide" onClick={onNewCity}>＋<span>下一座城市</span></button></div></section><div className="trip-workspace"><section className="itinerary-card"><header className="section-title-row"><div><span className="eyebrow">TODAY IN {city.englishName.toUpperCase()}</span><h2>{city.name} · 顺路行程</h2><p>{city.note}</p></div><div className="itinerary-heading-actions export-hide"><button className="text-button" onClick={onNewDay}>＋ 新增一天</button><button className="primary-button" onClick={onOptimize} disabled={busy === "route"}>{busy === "route" ? "正在整理…" : "✦ 重新排顺"}</button></div></header>{city.days.length ? city.days.map((day) => <DaySection key={day.id} day={day} onAdd={() => onNewPlace(day.id)} onRemove={() => onRemoveDay(day.id)}>{day.places.map((place, index) => <PlaceRow key={place.id} place={place} city={city} index={index} isLast={index === day.places.length - 1} busy={busy === place.id} onSummarize={() => onSummarize(day.id, place)} onToggleLock={() => onToggleLock(day.id, place.id)} onRemove={() => onRemovePlace(day.id, place.id)} onImages={(files) => onPlaceImage(day.id, place.id, files)} />)}</DaySection>) : <EmptyDay onAdd={() => { onNewDay(); }} />}</section><aside className="trip-side export-hide"><section className="quick-card assistant-quick"><span>✦</span><div><h3>行程助手</h3><p>一起整理地点、看点与每天的节奏。</p></div><button onClick={onAssistant}>聊一聊</button></section><section className="quick-card"><span>▦</span><div><h3>随手记账</h3><p>{trip.expenses.length} 笔旅行支出已经收好。</p></div><button onClick={onExpense}>记一笔</button></section><section className="quick-card"><span>▱</span><div><h3>票据夹</h3><p>{trip.tickets.length} 张车票、门票与预订单。</p></div><button onClick={onTicket}>加票据</button></section></aside></div></div>;
+  return <div className="trip-page" ref={refElement}><section className="export-only export-title"><span>TRAVEL CARD · {trip.cities.length} STOPS</span><h1>{trip.title}</h1><p>{trip.startDate} — {trip.endDate}</p><small>{routeTitle}</small></section><section className="trip-heading"><div><span className="eyebrow">{routeTitle}</span><p>{trip.startDate} — {trip.endDate}</p></div><MusicCard trip={trip} busy={busy === "track"} onRandom={onRandomTrack} onAi={onAiTrack} /></section><section className="city-strip"><header><div><h2>城市卡片</h2><span>{trip.cities.length} STOPS</span></div><button className="text-button export-hide" onClick={onNewCity}>＋ 添加城市</button></header><div>{trip.cities.map((item) => <CityCard key={item.id} city={item} tripStartDate={trip.startDate} active={item.id === city.id} onOpen={() => onOpenCity(item.id)} onCover={(file) => onCover(item, file)} />)}<button className="city-add-card export-hide" onClick={onNewCity}>＋<span>下一座城市</span></button></div></section><div className="trip-workspace"><section className="itinerary-card"><header className="section-title-row"><div><span className="eyebrow">TODAY IN {city.englishName.toUpperCase()}</span><h2>{city.name} · 顺路行程</h2><p>{city.note}</p></div><div className="itinerary-heading-actions export-hide"><button className="text-button" onClick={onNewDay}>＋ 新增一天</button><button className="primary-button" onClick={onOptimize} disabled={busy === "route"}>{busy === "route" ? "正在整理…" : "✦ 重新排顺"}</button></div></header>{city.days.length ? city.days.map((day) => <DaySection key={day.id} day={day} onAdd={() => onNewPlace(day.id)} onRemove={() => onRemoveDay(day.id)}>{day.places.map((place, index) => <PlaceRow key={place.id} place={place} city={city} index={index} isLast={index === day.places.length - 1} busy={busy === place.id} onSummarize={() => onSummarize(day.id, place)} onToggleLock={() => onToggleLock(day.id, place.id)} onRemove={() => onRemovePlace(day.id, place.id)} onImages={(files) => onPlaceImage(day.id, place.id, files)} />)}</DaySection>) : <EmptyDay onAdd={() => { onNewDay(); }} />}</section><aside className="trip-side export-hide"><section className="quick-card assistant-quick"><span>✦</span><div><h3>行程助手</h3><p>一起整理地点、看点与每天的节奏。</p></div><button onClick={onAssistant}>聊一聊</button></section><section className="quick-card"><span>▦</span><div><h3>随手记账</h3><p>{trip.expenses.length} 笔旅行支出已经收好。</p></div><button onClick={onExpense}>记一笔</button></section><section className="quick-card"><span>▱</span><div><h3>票据夹</h3><p>{trip.tickets.length} 张车票、门票与预订单。</p></div><button onClick={onTicket}>加票据</button></section></aside></div></div>;
 }
 
 function MusicCard(_props: { trip: Trip; busy: boolean; onRandom?: () => void; onAi?: () => void }) { return null; }
@@ -556,10 +562,11 @@ function SettingsView({ settings, onSettings, onSave, onBackup, onImport, onBulk
     finally { setTestingConnection(false); }
   }
   return <section className="settings-page">
-    <header className="page-intro"><span className="eyebrow">PREFERENCES</span><h2>把旅卡留在自己的设备里</h2><p>连接信息和旅行资料都只保存在当前浏览器。</p></header>
+    <header className="page-intro"><span className="eyebrow">PREFERENCES</span><h2>把旅卡留在自己的设备里</h2><p>旅行资料保存在当前设备；需要换设备时，可以用一个离线包完整带走。</p></header>
     <div className="settings-grid">
       <form className="settings-card" onSubmit={onSave}><header><span>✦</span><div><h3>DeepSeek 旅行助手</h3><p>聊天可以直接写入城市、地点、票据与账目。</p></div></header><label><span>服务地址</span><input value={settings.baseUrl} onChange={(event) => onSettings({ ...settings, baseUrl: event.target.value })} /></label><label><span>访问密钥</span><input type="password" value={settings.apiKey} onChange={(event) => onSettings({ ...settings, apiKey: event.target.value })} placeholder="••••••••••••" /></label><label><span>模型</span><select value={settings.model} onChange={(event) => onSettings({ ...settings, model: event.target.value })}><option value="deepseek-v4-flash">V4 Flash · 日常规划</option><option value="deepseek-v4-pro">V4 Pro · 精细规划</option></select></label><div className="settings-connection-actions"><button className="primary-button">保存连接</button><button type="button" onClick={testConnection} disabled={testingConnection}>{testingConnection ? "检查中…" : "测试连接"}</button></div>{connectionStatus && <p className={connectionStatus.startsWith("连接成功") ? "connection-status success" : "connection-status"}>{connectionStatus}</p>}</form>
-      <section className="settings-card"><header><span>⌂</span><div><h3>旅行资料</h3><p>备份整个工作台，或用素材包快速换成一趟新旅行。</p></div></header><div className="settings-actions"><button onClick={onBackup}>导出完整备份</button><button onClick={onImport}>导入旅行备份</button><button onClick={onDownloadTemplate}>下载素材包模板</button><button onClick={onBulkImport}>导入素材包 · 覆盖当前旅行</button><button onClick={onPersist}>在这台设备长久保留</button></div></section>
+      <section className="settings-card transfer-card"><header><span>⇄</span><div><h3>Mac → iPad 离线迁移</h3><p>离线包包含所有旅行、城市、景点、美食、票据、账目和已上传图片。</p></div></header><div className="settings-actions"><button className="transfer-primary" onClick={onBackup}>导出 iPad 离线包 · 含图片</button><button onClick={onImport}>在这台设备导入离线包</button><button onClick={onPersist}>允许长期离线保留</button></div><ol className="transfer-steps"><li>在 Mac 导出 JSON 文件，并用 AirDrop 发到 iPad。</li><li>iPad 打开旅卡网页，在这里选择“导入离线包”。</li><li>导入后会自动保存到 iPad；首次联网打开后，也可以离线查看。</li></ol><small>DeepSeek API 密钥不会写进离线包，需要在新设备单独配置。</small></section>
+      <section className="settings-card"><header><span>▦</span><div><h3>批量素材模板</h3><p>适合第一次把大量文字和图片整理成一趟新旅行，会覆盖当前旅行。</p></div></header><div className="settings-actions"><button onClick={onDownloadTemplate}>下载 ZIP 素材包模板</button><button onClick={onBulkImport}>导入 ZIP · 覆盖当前旅行</button></div></section>
     </div>
   </section>;
 }

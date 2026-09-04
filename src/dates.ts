@@ -1,4 +1,4 @@
-import type { City } from "./types";
+import type { City, DayPlan } from "./types";
 
 function yearFrom(value: string): number {
   return Number(value.match(/20\d{2}/)?.[0]) || new Date().getFullYear();
@@ -22,6 +22,24 @@ export function cityDateRange(startDate: string, endDate: string): string {
 
 export function cityStartDate(city: City, tripDate: string): string {
   return city.startDate || looseDateToIso(city.dates, tripDate, 0) || "9999-12-31";
+}
+
+function datedDays(days: DayPlan[], tripDate: string): string[] {
+  return days.map((day) => looseDateToIso(day.date, tripDate, 0)).filter(Boolean).sort();
+}
+
+/** Once itinerary days have real dates, they become the source of truth for the city card. */
+export function cityDatesFromDays(city: City, tripDate: string): Pick<City, "startDate" | "endDate" | "dates"> | null {
+  const dates = datedDays(city.days, tripDate);
+  if (!dates.length) return null;
+  const startDate = dates[0];
+  const endDate = dates[dates.length - 1];
+  return { startDate, endDate, dates: cityDateRange(startDate, endDate) };
+}
+
+export function syncCityDatesFromDays(city: City, tripDate: string): City {
+  const range = cityDatesFromDays(city, tripDate);
+  return range ? { ...city, ...range } : city;
 }
 
 export function sortCitiesByDate(cities: City[], tripDate: string): City[] {
