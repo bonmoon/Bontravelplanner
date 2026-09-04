@@ -36,15 +36,14 @@ export function CityCard({ city, tripStartDate, active, onOpen, onCover }: { cit
         </button>
         <div className="city-counts"><span>{city.days.length} 天</span><span>景点 {placeCount}</span></div>
       </div>
-      <label className={`city-cover-art ${city.cover ? "has-image" : ""}`} onClick={(event) => event.stopPropagation()}>
+      <div className={`city-cover-art ${city.cover ? "has-image" : ""}`} aria-hidden="true">
         {city.cover ? <img src={city.cover} alt={`${city.name}封面`} /> : <span>{city.name.slice(0, 1)}</span>}
-        <input type="file" accept="image/*" onChange={(event) => event.target.files?.[0] && onCover(event.target.files[0])} />
-      </label>
+      </div>
     </article>
   );
 }
 
-export function TicketCard({ ticket, city, onEdit }: { ticket: Ticket; city?: City; onEdit: () => void }) {
+export function TicketCard({ ticket, city, onEdit, onRemove }: { ticket: Ticket; city?: City; onEdit: () => void; onRemove: () => void }) {
   return (
     <article className={`ticket-card kind-${ticket.kind}`} style={{ backgroundColor: ticket.color }}>
       <div className="ticket-mark"><span>{ticket.kind === "火车票" ? "▥" : ticket.kind === "酒店" ? "⌂" : "✦"}</span><small>{ticket.kind}</small></div>
@@ -54,7 +53,7 @@ export function TicketCard({ ticket, city, onEdit }: { ticket: Ticket; city?: Ci
         <div className="ticket-fields"><span><small>日期</small>{ticket.date}</span><span><small>时间</small>{ticket.time}</span><span><small>信息</small>{ticket.meta}</span></div>
       </div>
       <div className="ticket-stub">{ticket.qrCode ? <img className="ticket-qr" src={ticket.qrCode} alt={`${ticket.title}二维码`} /> : <span className="fake-code">{ticket.code}</span>}<small>{city?.name || "旅程"}</small></div>
-      <button className="ticket-edit export-hide" onClick={onEdit} aria-label={`编辑${ticket.title}`}>✎ 编辑</button>
+      <div className="ticket-card-actions export-hide"><button className="ticket-edit" onClick={onEdit} aria-label={`编辑${ticket.title}`}>✎ 编辑</button><button className="ticket-delete" onClick={onRemove} aria-label={`删除${ticket.title}`}>× 删除</button></div>
     </article>
   );
 }
