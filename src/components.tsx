@@ -57,10 +57,14 @@ export function TicketCard({ ticket, city, onEdit, onRemove, onPreview }: { tick
         {ticket.kind === "酒店" && ticket.includesBreakfast && <span className="breakfast-badge" title="含早餐"><img src="./assets/breakfast-croissant.png" alt="" />含早餐</span>}
         <div className="ticket-fields">{ticketFields(ticket).map(([label, value]) => <span key={label}><small>{label}</small>{value}</span>)}</div>
       </div>
-      <div className="ticket-stub ticket-stub-files">{ticket.qrCode && <button className="ticket-qr-button" onClick={onPreview} aria-label="放大二维码"><img className="ticket-qr" src={ticket.qrCode} alt={`${ticket.title}二维码`} /></button>}{attachment ? <button className="ticket-attachment-button" onClick={onPreview} onDoubleClick={onPreview} aria-label={`预览${ticket.title}完整附件`}>{attachment.type === "image" ? <img src={attachment.data} alt="票据附件" /> : <b>PDF</b>}<small>查看附件 · {files.length}</small></button> : <button className="ticket-image-add export-hide" onClick={onEdit}>＋ 图片 / PDF</button>}<small>{city?.name || "旅程"}</small></div>
+      <div className="ticket-stub ticket-stub-files"><TicketQrs ticket={ticket} onPreview={onPreview} />{attachment ? <button className="ticket-attachment-button" onClick={onPreview} onDoubleClick={onPreview} aria-label={`预览${ticket.title}完整附件`}>{attachment.type === "image" ? <img src={attachment.data} alt="票据附件" /> : <b>PDF</b>}<small>查看附件 · {files.length}</small></button> : <button className="ticket-image-add export-hide" onClick={onEdit}>＋ 图片 / PDF</button>}<small>{city?.name || "旅程"}</small></div>
       <div className="ticket-card-actions export-hide"><button className="ticket-edit" onClick={onEdit} aria-label={`编辑${ticket.title}`}>✎ 编辑</button><button className="ticket-delete" onClick={onRemove} aria-label={`删除${ticket.title}`}>× 删除</button></div>
     </article>
   );
+}
+
+export function TicketQrs({ ticket, onPreview }: { ticket: Ticket; onPreview?: () => void }) {
+  return <>{[ticket.qrCode, ticket.qrCode2].map((qr, index) => qr && (onPreview ? <button key={index} className="ticket-qr-button" onClick={onPreview} aria-label={`放大旅客 ${index + 1} 二维码`}><img className="ticket-qr" src={qr} alt={`旅客 ${index + 1} 二维码`} /><small>旅客 {index + 1}</small></button> : <section key={index}><h3>旅客 {index + 1} · 二维码</h3><img className="full-qr" src={qr} alt={`旅客 ${index + 1} 完整二维码`} /></section>))}</>;
 }
 
 export function PlaceRow({

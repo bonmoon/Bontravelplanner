@@ -14,6 +14,7 @@ export function TicketEditor({ cityId, initial, settings, onClose, onCreate }: {
   const [busy, setBusy] = useState(false);
   const [autoRead, setAutoRead] = useState(false);
   const [cropSource, setCropSource] = useState("");
+  const [cropTarget, setCropTarget] = useState<"qrCode" | "qrCode2">("qrCode");
   const [cropping, setCropping] = useState(false);
   const alive = useRef(true);
   const kind = draft.kind || "火车票";
@@ -51,12 +52,12 @@ export function TicketEditor({ cityId, initial, settings, onClose, onCreate }: {
     } catch (error) { if (alive.current) setStatus(error instanceof Error ? error.message : "附件暂时无法读取"); }
     finally { if (alive.current) setBusy(false); }
   }
-  async function image(file: File | undefined, target: "qrCode" | "backgroundImage") {
+  async function image(file: File | undefined, target: "qrCode" | "qrCode2" | "backgroundImage") {
     if (!file) return;
     try {
       const { readTicketData } = await import("./ticketFiles");
       const data = await readTicketData(file);
-      if (target === "qrCode") { setCropSource(data); setCropping(true); }
+      if (target === "qrCode" || target === "qrCode2") { setCropTarget(target); setCropSource(data); setCropping(true); }
       else patch(target, data);
     } catch (error) { setStatus(String(error)); }
   }
@@ -78,7 +79,7 @@ export function TicketEditor({ cityId, initial, settings, onClose, onCreate }: {
           <label className="recognize-option"><input type="checkbox" checked={autoRead} onChange={(event) => setAutoRead(event.target.checked)} />上传后自动补齐空白字段</label><p className="privacy-note">识别会把票据文字发送给你配置的 DeepSeek。仅生成草稿，不自动保存；首次图片识别需联网下载语言包。</p>
           {!!files.length && <button type="button" onClick={async () => { setBusy(true); try { await recognize(files); } catch (error) { setStatus(error instanceof Error ? error.message : "识别失败，仍可手动填写"); } finally { setBusy(false); } }}>✦ 识别并补齐空白字段</button>}
         </section>
-        <div className="ticket-art-fields"><section><h3>二维码</h3>{draft.qrCode && <img className="qr-editor-preview" src={draft.qrCode} alt="二维码预览" />}<label className="ticket-file-add">＋ 从图片选取<input type="file" accept="image/*" onChange={(event) => { void image(event.target.files?.[0], "qrCode"); event.target.value = ""; }} /></label>{draft.qrCode && <><button type="button" onClick={() => { setCropSource(draft.qrCode!); setCropping(true); }}>裁剪二维码</button><button type="button" onClick={() => patch("qrCode", "")}>移除</button></>}</section>
+        <div className="ticket-art-fields">{(["qrCode", "qrCode2"] as const).map((key, index) => <section key={key}><h3>旅客 {index + 1} · 二维码</h3>{draft[key] && <img className="qr-editor-preview" src={draft[key]} alt={`旅客 ${index + 1} 二维码`} />}<label className="ticket-file-add">＋ 从图片选取<input type="file" accept="image/*" onChange={(event) => { void image(event.target.files?.[0], key); event.target.value = ""; }} /></label>{draft[key] && <><button type="button" onClick={() => { setCropTarget(key); setCropSource(draft[key]!); setCropping(true); }}>裁剪二维码</button><button type="button" onClick={() => patch(key, "")}>移除</button></>}</section>)}
           <section><h3>票面背景</h3>{draft.backgroundImage && <img className="background-editor-preview" src={draft.backgroundImage} alt="票面背景预览" />}<label className="ticket-file-add">＋ 选择背景<input type="file" accept="image/*" onChange={(event) => { void image(event.target.files?.[0], "backgroundImage"); event.target.value = ""; }} /></label>{draft.backgroundImage && <button type="button" onClick={() => patch("backgroundImage", "")}>移除背景</button>}<p>仅显示在票据中段，不覆盖图标、二维码和附件。</p></section></div>
         <div className="category-picker">{(Object.keys(colors) as TicketKind[]).map((item) => <button type="button" key={item} className={kind === item ? "active" : ""} onClick={() => patch("kind", item)}>{item}</button>)}</div>
         {kind === "酒店" && <label className="recognize-option"><input type="checkbox" checked={!!draft.includesBreakfast} onChange={(event) => patch("includesBreakfast", event.target.checked)} /><img className="breakfast-editor-icon" src="./assets/breakfast-croissant.png" alt="" />含早餐</label>}
@@ -89,7 +90,7 @@ export function TicketEditor({ cityId, initial, settings, onClose, onCreate }: {
       {status && <p role="status" className="ticket-editor-status">{status}</p>}
       <footer><button type="button" onClick={close}>取消</button><button className="primary-button" disabled={busy}>{busy ? "正在处理…" : "保存票据"}</button></footer>
     </form>
-    {cropping && <QrCropper source={cropSource} onCancel={() => setCropping(false)} onSave={(value) => { patch("qrCode", value); setCropping(false); }} />}
+    {cropping && <QrCropper source={cropSource} onCancel={() => setCropping(false)} onSave={(value) => { patch(cropTarget, value); setCropping(false); }} />}
   </Modal>;
 }
 

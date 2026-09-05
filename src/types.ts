@@ -74,6 +74,7 @@ export interface Ticket {
   attachmentType?: "image" | "pdf";
   includesBreakfast?: boolean;
   qrCode?: string;
+  qrCode2?: string;
   attachments?: TicketAttachment[];
   backgroundImage?: string;
   passengers?: string;
@@ -154,7 +155,7 @@ export interface MusicLibraryItem {
 export type AssistantOperation =
   | { type: "open_ticket" }
   | { type: "open_expense" }
-  | { type: "optimize_route" }
+  | { type: "optimize_route"; date?: string; cityName?: string }
   | { type: "add_city"; city: Partial<City> & Pick<City, "name"> }
   | { type: "add_place"; cityName?: string; dayTitle?: string; place: Partial<Place> & Pick<Place, "name"> }
   | { type: "update_place"; cityName?: string; placeName: string; changes: Partial<Place> }

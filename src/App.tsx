@@ -53,6 +53,7 @@ function App() {
   const [busy, setBusy] = useState("");
   const [settings, setSettings] = useState<AssistantSettings>(loadAssistantSettings);
   const [optimized, setOptimized] = useState<OptimizedDay[]>([]);
+  const [optimizedCityId, setOptimizedCityId] = useState("");
   const [chatDraft, setChatDraft] = useState("");
   const [expenseDraft, setExpenseDraft] = useState("");
   const [assistantOpen, setAssistantOpen] = useState(false);
@@ -168,10 +169,20 @@ function App() {
   }
 
   async function prepareOptimization() {
-    if (!trip || !city || !allPlaces.length) return showToast("先添加几个地点吧");
+    await prepareOptimizationFor();
+  }
+
+  async function prepareOptimizationFor(date?: string, cityName?: string) {
+    const target = cityName ? trip?.cities.find((item) => item.name === cityName || item.englishName === cityName) : city;
+    if (!trip || !target) return showToast("没有找到对应城市，请补充城市名称");
+    const requestedDate = date ? looseDateToIso(date, trip.startDate) : undefined;
+    const days = date ? target.days.filter((day) => (looseDateToIso(day.date, trip.startDate) || day.date) === (requestedDate || date)) : target.days;
+    if (!days.some((day) => day.places.length)) return showToast(date ? "这一天还没有地点，请确认日期或先添加行程" : "先添加几个地点吧");
     setBusy("route");
     try {
-      setOptimized(await optimizeCity(settings, trip, city));
+      setOptimized(await optimizeCity(settings, trip, { ...target, days }));
+      setOptimizedCityId(target.id);
+      setActiveCityId(target.id);
       setModal("route");
     } catch (error) {
       const message = error instanceof Error ? error.message : "旅行助手没有完成这次操作";
@@ -183,7 +194,7 @@ function App() {
   }
 
   function acceptOptimization() {
-    updateCity((current) => applyOptimizedDays(current, optimized));
+    updateTrip((current) => ({ ...current, cities: current.cities.map((item) => item.id === optimizedCityId ? applyOptimizedDays(item, optimized) : item) }));
     setModal("none");
     showToast("路线已经重新排好");
   }
@@ -218,18 +229,24 @@ function App() {
         if (operation.type === "plan_day") {
           const requestedIndex = next.cities.findIndex((item) => operation.cityName && item.name.includes(operation.cityName));
           const activeIndex = next.cities.findIndex((item) => item.id === city?.id);
-          const target = next.cities[requestedIndex >= 0 ? requestedIndex : Math.max(0, activeIndex)] || next.cities[0];
+          let target = next.cities[requestedIndex >= 0 ? requestedIndex : Math.max(0, activeIndex)] || next.cities[0];
+          if (operation.cityName && requestedIndex < 0) {
+            target = { id: uid("city"), name: operation.cityName, englishName: operation.cityName, dates: operation.date || "待定", note: "从攻略收好的地点", color: "#eadccf", days: [] };
+            next = { ...next, cities: [...next.cities, target] };
+          }
           if (!target || !operation.places?.length) return;
-          const dayIndex = Math.max(0, target.days.findIndex((day) => (operation.date && day.date.includes(operation.date)) || (operation.title && day.title.includes(operation.title))));
-          const targetDay = target.days[dayIndex] || target.days[0] || { id: uid("day"), date: operation.date || "Day 1", weekday: "", title: operation.title || "顺路的一天", places: [] };
-          const existingByName = new Map(target.days.flatMap((day) => day.places).map((place) => [place.name.replace(/\s/g, "").toLowerCase(), place]));
-          const planned = operation.places.filter((place) => place?.name).slice(0, 8).map((raw) => {
+          const requestedDate = operation.date ? looseDateToIso(operation.date, next.startDate) || operation.date : undefined;
+          const dayIndex = target.days.findIndex((day) => requestedDate ? (looseDateToIso(day.date, next.startDate) || day.date) === requestedDate : !!operation.title && day.title === operation.title);
+          const targetDay = (dayIndex >= 0 ? target.days[dayIndex] : undefined) || { id: uid("day"), date: requestedDate || "Day 1", weekday: "", title: operation.title || "顺路的一天", places: [] };
+          const existingByName = new Map(targetDay.places.map((place) => [place.name.replace(/\s/g, "").toLowerCase(), place]));
+          const planned = operation.places.filter((place) => place?.name).slice(0, 30).map((raw) => {
             const existing = existingByName.get(raw.name.replace(/\s/g, "").toLowerCase());
             return { ...existing, id: existing?.id || uid("place"), name: raw.name, mapQuery: raw.mapQuery || existing?.mapQuery || "", category: categories.includes(raw.category as PlaceCategory) ? raw.category as PlaceCategory : existing?.category || "景点", time: raw.time || existing?.time || "待安排", endTime: raw.endTime || existing?.endTime || "", summary: raw.summary || existing?.summary || "", highlights: raw.highlights || existing?.highlights || [], duration: raw.duration || existing?.duration || "待安排", mapUrl: raw.mapUrl || existing?.mapUrl || "" } as Place;
           });
-          const places = operation.replace === false ? [...targetDay.places, ...planned.filter((place) => !targetDay.places.some((existing) => existing.name === place.name))] : planned;
-          const updatedDay = { ...targetDay, date: operation.date || targetDay.date, title: operation.title || targetDay.title, places };
-          const days = target.days.length ? target.days.map((day, index) => index === dayIndex ? updatedDay : day) : [updatedDay];
+          const places = operation.replace !== true ? [...targetDay.places, ...planned.filter((place) => !targetDay.places.some((existing) => existing.name === place.name))] : [...planned.map((place) => targetDay.places.find((old) => old.id === place.id && old.locked) || place), ...targetDay.places.filter((old) => old.locked && !planned.some((place) => place.id === old.id))];
+          const updatedDay = { ...targetDay, date: requestedDate || targetDay.date, title: operation.title || targetDay.title, places: places.sort((a, b) => (a.time.match(/\d{1,2}:\d{2}/)?.[0].padStart(5,"0") || "99:99").localeCompare(b.time.match(/\d{1,2}:\d{2}/)?.[0].padStart(5,"0") || "99:99")) };
+          const days = dayIndex >= 0 ? target.days.map((day, index) => index === dayIndex ? updatedDay : day) : [...target.days, updatedDay];
+          days.sort((a, b) => (looseDateToIso(a.date, next.startDate) || "9999").localeCompare(looseDateToIso(b.date, next.startDate) || "9999"));
           next = { ...next, cities: next.cities.map((item) => item.id === target.id ? { ...item, days } : item) };
         }
         if (operation.type === "add_expense") {
@@ -249,7 +266,8 @@ function App() {
     });
     if (operations.some((item) => item.type === "open_ticket")) setModal("ticket");
     if (operations.some((item) => item.type === "open_expense")) setModal("expense");
-    if (operations.some((item) => item.type === "optimize_route")) window.setTimeout(prepareOptimization, 0);
+    const route = operations.find((item) => item.type === "optimize_route");
+    if (route?.type === "optimize_route") window.setTimeout(() => void prepareOptimizationFor(route.date, route.cityName), 0);
   }
 
   async function sendChat(event: FormEvent) {
@@ -272,7 +290,7 @@ function App() {
     }
     setBusy("chat");
     try {
-      const result = await commandTrip(settings, trip, content);
+      const result = await commandTrip(settings, trip, content, city?.name);
       applyAssistantOperations(result.operations);
       updateTrip((current) => ({ ...current, chats: [...current.chats, { id: uid("chat"), role: "assistant", content: result.reply, createdAt: new Date().toISOString() }] }));
       if (result.operations.length) showToast(`旅行助手完成了 ${result.operations.length} 项修改`);
@@ -593,7 +611,7 @@ function AssistantView({ trip, draft, onDraft, onSend, busy, onOptimize, onExpen
 
 function FloatingAssistant({ open, onOpen, onClose, trip, draft, onDraft, onSend, busy, onTicket, onExpense }: { open: boolean; onOpen: () => void; onClose: () => void; trip: Trip; draft: string; onDraft: (value: string) => void; onSend: (event: FormEvent) => void; busy: boolean; onTicket: () => void; onExpense: () => void }) {
   return <aside className={`floating-assistant export-hide ${open ? "open" : ""}`}>
-    {open && <section className="floating-assistant-panel"><header><img src="./assets/travel-assistant-avatar.png" alt="旅行助手 Avatar" /><div><strong>旅行助手</strong><small>DeepSeek · 可以直接修改这趟旅行</small></div><button onClick={onClose} aria-label="收起旅行助手">×</button></header><div className="floating-assistant-messages">{trip.chats.slice(-5).map((message) => <article key={message.id} className={message.role}><span>{message.role === "assistant" ? "旅" : "我"}</span><p>{message.content}</p></article>)}{busy && <article className="assistant"><span>旅</span><p>正在把内容整理进旅行卡…</p></article>}</div><div className="floating-assistant-quick"><button onClick={onTicket}>＋ 票据</button><button onClick={onExpense}>＋ 记账</button><button onClick={() => onDraft("帮我把当前城市的路线重新排顺")}>排顺路线</button></div><form onSubmit={onSend}><textarea value={draft} disabled={busy} onChange={(event) => onDraft(event.target.value)} onKeyDown={sendOnEnter} placeholder="粘贴完整计划，或说：添加巴黎、晚餐 38 欧、增加一张火车票…" /><button disabled={busy || !draft.trim()}>➤</button></form></section>}
+    {open && <section className="floating-assistant-panel"><header><img src="./assets/travel-assistant-avatar.png" alt="旅行助手 Avatar" /><div><strong>旅行助手</strong><small>DeepSeek · 可以直接修改这趟旅行</small></div><button onClick={onClose} aria-label="收起旅行助手">×</button></header><div className="floating-assistant-messages">{trip.chats.slice(-5).map((message) => <article key={message.id} className={message.role}><span>{message.role === "assistant" ? "旅" : "我"}</span><p>{message.content}</p></article>)}{busy && <article className="assistant"><span>旅</span><p>正在把内容整理进旅行卡…</p></article>}</div><div className="floating-assistant-quick"><button onClick={onTicket}>＋ 票据</button><button onClick={onExpense}>＋ 记账</button><button onClick={() => onDraft("城市：\n日期：\n请把下面的攻略正文整理成行程，保留原有地点，安排建议时间：\n")}>＋ 攻略</button><button onClick={() => onDraft("帮我把当前城市的路线重新排顺并调整建议时间")}>排顺路线</button></div><form onSubmit={onSend}><textarea value={draft} disabled={busy} onChange={(event) => onDraft(event.target.value)} onKeyDown={sendOnEnter} placeholder="粘贴攻略正文，写上城市和日期，例如：维也纳，2026-09-17。整理成当天行程并安排时间…" /><button disabled={busy || !draft.trim()}>➤</button></form></section>}
     <button className="floating-assistant-trigger" onClick={open ? onClose : onOpen} aria-label={open ? "收起旅行助手" : "打开旅行助手"}><img src="./assets/travel-assistant-avatar.png" alt="" /><span>{open ? "×" : "问问旅行助手"}</span></button>
   </aside>;
 }
@@ -665,7 +683,7 @@ function ExpenseModal({ cityId, draft, onDraft, busy, onQuick, onClose, onManual
 
 function RouteModal({ city, optimized, onClose, onAccept }: { city: City; optimized: OptimizedDay[]; onClose: () => void; onAccept: () => void }) {
   const places = new Map(city.days.flatMap((day) => day.places).map((place) => [place.id, place]));
-  return <Modal title="路线排顺了" eyebrow={city.name} onClose={onClose} wide><div className="route-preview">{optimized.map((day) => <section key={day.dayId}><header><h3>{day.title}</h3><p>{day.note}</p></header><div>{day.placeIds.map((id, index) => <article key={id}><span>{index + 1}</span><strong>{places.get(id)?.name}</strong><small>{places.get(id)?.time} · {places.get(id)?.category}</small></article>)}</div></section>)}</div><footer className="modal-footer"><button onClick={onClose}>先不改</button><button className="primary-button" onClick={onAccept}>使用这条路线</button></footer></Modal>;
+  return <Modal title="路线排顺了" eyebrow={city.name} onClose={onClose} wide><div className="route-preview">{optimized.map((day) => <section key={day.dayId}><header><h3>{day.title}</h3><p>{day.note}</p></header><div>{day.placeIds.map((id, index) => <article key={id}><span>{index + 1}</span><strong>{places.get(id)?.name}</strong><small>{day.times[id]?.time || places.get(id)?.time} – {day.times[id]?.endTime || places.get(id)?.endTime || "待定"} · {places.get(id)?.category}</small></article>)}</div></section>)}</div><footer className="modal-footer"><button onClick={onClose}>先不改</button><button className="primary-button" onClick={onAccept}>使用这条路线</button></footer></Modal>;
 }
 
 export default App;

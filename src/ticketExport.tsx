@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import type { Trip } from "./types";
-import { TicketCard } from "./components";
+import { TicketQrs, TicketCard } from "./components";
 import { sortTickets, ticketAttachments } from "./tickets";
 import { downloadBlob } from "./exporters";
 
@@ -27,7 +27,7 @@ export async function exportTicketsHtml(trip: Trip, styles: string): Promise<voi
         files[index] = await prepareTicketFile(new File([await response.blob()], file.name + ".pdf", { type: "application/pdf" }));
       }
     }
-    sections.push(renderToStaticMarkup(<section className="offline-ticket"><TicketCard ticket={ticket} city={trip.cities.find((city) => city.id === ticket.cityId)} onEdit={() => {}} onRemove={() => {}} onPreview={() => {}} /><details><summary>展开完整票据 / 二维码 · {files.length} 份附件</summary><div className="ticket-full-preview">{ticket.qrCode && <section><h3>二维码</h3><img className="full-qr" src={ticket.qrCode} alt="完整二维码" /></section>}{files.map((file) => <section key={file.id}><h3>{file.name}</h3><a href={file.data} download={file.name}>保存原始文件</a>{file.type === "image" ? <img src={file.data} alt={file.name} /> : file.pages?.map((page, index) => <figure key={index}><img src={page} alt={`第 ${index + 1} 页`} /><figcaption>第 {index + 1} / {file.pages!.length} 页</figcaption></figure>)}</section>)}</div></details></section>));
+    sections.push(renderToStaticMarkup(<section className="offline-ticket"><TicketCard ticket={ticket} city={trip.cities.find((city) => city.id === ticket.cityId)} onEdit={() => {}} onRemove={() => {}} onPreview={() => {}} /><details><summary>展开完整票据 / 二维码 · {files.length} 份附件</summary><div className="ticket-full-preview"><TicketQrs ticket={ticket} />{files.map((file) => <section key={file.id}><h3>{file.name}</h3><a href={file.data} download={file.name}>保存原始文件</a>{file.type === "image" ? <img src={file.data} alt={file.name} /> : file.pages?.map((page, index) => <figure key={index}><img src={page} alt={`第 ${index + 1} 页`} /><figcaption>第 {index + 1} / {file.pages!.length} 页</figcaption></figure>)}</section>)}</div></details></section>));
   }
   const body = document.createElement("main"); body.innerHTML = sections.join("");
   const cache = new Map<string, string>();
