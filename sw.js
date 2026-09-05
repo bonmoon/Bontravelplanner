@@ -1,5 +1,5 @@
-const CACHE = "travel-card-studio-v17";
-const SHELL = ["./","./index.html","./manifest.webmanifest","./icons/app-icon.svg","./assets/bontrip-food.png","./assets/bontrip-home.png","./assets/bontrip-ledger.png","./assets/bontrip-map.png","./assets/bontrip-travel.png","./assets/breakfast-croissant.png","./assets/index-B6LnApmp.js","./assets/index-DKiMWMgE.css","./assets/paws-and-passport.mp3","./assets/pdf.worker.min-Dswkl-cV.mjs","./assets/src-N-C5JGmH.js","./assets/ticketFiles-iJrK86Nq.js","./assets/travel-assistant-avatar.png"];
+const CACHE = "travel-card-studio-v18";
+const SHELL = ["./","./index.html","./manifest.webmanifest","./icons/app-icon.svg","./assets/bontrip-food.png","./assets/bontrip-home.png","./assets/bontrip-ledger.png","./assets/bontrip-map.png","./assets/bontrip-travel.png","./assets/breakfast-croissant.png","./assets/index-Cq1fQHDz.css","./assets/index-DV5aiY1a.js","./assets/paws-and-passport.mp3","./assets/pdf.worker.min-Dswkl-cV.mjs","./assets/src-DeB8DAtl.js","./assets/sticker-smile.png","./assets/ticketFiles--k8D8MJi.js","./assets/travel-assistant-avatar.png"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(SHELL)));
