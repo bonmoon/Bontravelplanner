@@ -52,6 +52,7 @@ function App() {
   const [document, setDocument] = useState<TravelDocument>(sampleDocument);
   const [ready, setReady] = useState(false);
   const [view, setView] = useState<ViewName>("trip");
+  const [cityDetail, setCityDetail] = useState(false);
   const [activeCityId, setActiveCityId] = useState("brussels");
   const [modal, setModal] = useState<ModalName>("none");
   const [modalDayId, setModalDayId] = useState("");
@@ -115,7 +116,9 @@ function App() {
 
   function openCity(cityId: string) {
     setActiveCityId(cityId);
+    setCityDetail(true);
     setView("trip");
+    window.scrollTo({ top: 0 });
   }
 
   async function setCityCover(target: City, file: File) {
@@ -375,16 +378,19 @@ function App() {
 
   return (
     <>
+    <TravelBgm />
     {introOpen && <OpeningIntro onDone={() => setIntroOpen(false)} />}
     <div className="app-shell">
-      <Sidebar view={view} onView={setView} onNewTrip={() => setModal("trip")} />
+      <Sidebar view={view} onView={(next) => { setCityDetail(false); setView(next); }} onNewTrip={() => setModal("trip")} />
       <main className="main-shell">
         <Topbar trip={trip} view={view} onSettings={() => setView("settings")} onExportHtml={doExportHtml} onExportPng={doExportPng} busy={busy === "export"} />
         <div className="page-scroll">
-          {view === "home" && <HomeView document={document} onOpenTrip={(id) => { setDocument((current) => ({ ...current, activeTripId: id })); setView("trip"); }} onCover={setTripCover} onNew={() => setModal("trip")} />}
+          {view === "home" && <HomeView document={document} onOpenTrip={(id) => { setCityDetail(false); setDocument((current) => ({ ...current, activeTripId: id })); setView("trip"); }} onCover={setTripCover} onNew={() => setModal("trip")} />}
           {view === "trip" && city && (
             <TripView
               refElement={exportRef}
+              detail={cityDetail}
+              onBack={() => { setCityDetail(false); window.scrollTo({ top: 0 }); }}
               trip={trip}
               city={city}
               busy={busy}
@@ -414,7 +420,7 @@ function App() {
           {view === "settings" && <SettingsView settings={settings} onSettings={setSettings} onSave={saveSettings} onBackup={() => exportJson(document, trip.title)} onImport={() => importRef.current?.click()} onBulkImport={() => bulkImportRef.current?.click()} onDownloadTemplate={downloadTripPackageTemplate} onPersist={async () => showToast(await requestPersistentStorage() ? "这台设备会尽量长久保留旅行资料" : "浏览器会继续自动保存旅行资料")} />}
         </div>
       </main>
-      <MobileNav view={view} onView={setView} />
+      <MobileNav view={view} onView={(next) => { setCityDetail(false); setView(next); }} />
       <input ref={importRef} className="hidden" type="file" accept=".json,application/json,text/json" onChange={(event) => event.target.files?.[0] && void importBackup(event.target.files[0])} />
       <input ref={bulkImportRef} className="hidden" type="file" accept=".zip,application/zip" onChange={(event) => event.target.files?.[0] && void importBulkPackage(event.target.files[0])} />
       {modal === "trip" && <NewTripModal onClose={() => setModal("none")} onCreate={(created) => { setDocument((current) => ({ ...current, trips: [created, ...current.trips], activeTripId: created.id })); setActiveCityId(created.cities[0].id); setView("trip"); setModal("none"); }} />}
@@ -436,8 +442,28 @@ function App() {
   );
 }
 
+function SettingsIcon() {
+  return <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M4 7h16M4 17h16" /><rect x="7" y="4" width="4" height="6" rx="2" fill="#e8c547" /><rect x="14" y="14" width="4" height="6" rx="2" fill="#f06349" /></svg>;
+}
+
+function TravelBgm() {
+  const audio = useRef<HTMLAudioElement>(null);
+  const [enabled, setEnabled] = useState(() => { try { return localStorage.getItem("bontrip-bgm") !== "off"; } catch { return true; } });
+  const [playing, setPlaying] = useState(false);
+  useEffect(() => {
+    const start = () => { if (enabled && audio.current) { audio.current.volume = .35; void audio.current.play().catch(() => setPlaying(false)); } };
+    const toggle = () => setEnabled((current) => !current);
+    window.addEventListener("pointerdown", start, { once: true });
+    window.addEventListener("bontrip-bgm-start", start);
+    window.addEventListener("bontrip-bgm-toggle", toggle);
+    try { localStorage.setItem("bontrip-bgm", enabled ? "on" : "off"); } catch { /* storage unavailable */ }
+    if (enabled) start(); else audio.current?.pause();
+    return () => { window.removeEventListener("pointerdown", start); window.removeEventListener("bontrip-bgm-start", start); window.removeEventListener("bontrip-bgm-toggle", toggle); };
+  }, [enabled]);
+  return <div className="travel-bgm export-hide"><audio ref={audio} src="./assets/paws-and-passport.mp3" loop preload="auto" onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} /><button aria-label={playing ? "关闭背景音乐" : "播放背景音乐"} aria-pressed={playing} onClick={() => { if (enabled && !playing) void audio.current?.play().catch(() => {}); else setEnabled(!enabled); }}><span>♪</span>{playing ? "音乐开" : "音乐关"}</button></div>;
+}
+
 function OpeningIntro({ onDone }: { onDone: () => void }) {
-  const audioRef = useRef<HTMLAudioElement>(null);
   const [running, setRunning] = useState(false);
   const [leaving, setLeaving] = useState(false);
   const [muted, setMuted] = useState(false);
@@ -445,11 +471,6 @@ function OpeningIntro({ onDone }: { onDone: () => void }) {
 
   function rememberAndClose() {
     try { window.sessionStorage.setItem("bontrip-opening-seen", "1"); } catch { /* private mode */ }
-    const audio = audioRef.current;
-    if (audio) {
-      audio.pause();
-      audio.currentTime = 0;
-    }
     onDone();
   }
 
@@ -466,26 +487,16 @@ function OpeningIntro({ onDone }: { onDone: () => void }) {
   async function beginJourney() {
     if (running) return;
     setRunning(true);
-    if (!muted && audioRef.current) {
-      audioRef.current.volume = 0.58;
-      try { await audioRef.current.play(); }
-      catch { setSoundMessage("轻触右上角声音按钮播放 BGM"); }
-    }
+    window.dispatchEvent(new CustomEvent("bontrip-bgm-start"));
   }
 
   async function toggleSound() {
-    const nextMuted = !muted;
-    setMuted(nextMuted);
-    if (!audioRef.current) return;
-    audioRef.current.muted = nextMuted;
-    if (!nextMuted && running) {
-      try { await audioRef.current.play(); setSoundMessage(""); }
-      catch { setSoundMessage("当前浏览器暂未允许播放"); }
-    }
+    setMuted(!muted);
+    window.dispatchEvent(new CustomEvent("bontrip-bgm-toggle"));
+    setSoundMessage("");
   }
 
   return <section className={`opening-intro export-hide ${running ? "is-running" : ""} ${leaving ? "is-leaving" : ""}`} aria-label="旅卡排版室开场">
-    <audio ref={audioRef} src="./assets/paws-and-passport.mp3" preload="auto" />
     <div className="opening-stamp opening-stamp-a">BON<br />VOYAGE</div>
     <div className="opening-stamp opening-stamp-b">PAWS<br />ABROAD</div>
     <div className="opening-route" aria-hidden="true"><i /><i /><i /><i /></div>
@@ -508,7 +519,7 @@ function OpeningIntro({ onDone }: { onDone: () => void }) {
 }
 
 function Sidebar({ view, onView, onNewTrip }: { view: ViewName; onView: (value: ViewName) => void; onNewTrip: () => void }) {
-  return <aside className="sidebar export-hide"><div className="brand"><span>旅</span><div><strong>旅卡排版室</strong><small>Travel Card Studio</small></div></div><button className="new-trip-button" onClick={onNewTrip}>＋ 新建旅行</button><nav>{navItems.map((item) => <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => onView(item.id)}><i>{item.image ? <img src={item.image} alt="" /> : item.icon}</i>{item.label}</button>)}</nav><div className="sidebar-illustration"><img src="./assets/bontrip-travel.png" alt="旅行小猫" /><p>在路上，<br />收集风景，<br />也收集自己。</p></div></aside>;
+  return <aside className="sidebar export-hide"><div className="brand"><span>旅</span><div><strong>旅卡排版室</strong><small>Travel Card Studio</small></div></div><button className="new-trip-button" onClick={onNewTrip}>＋ 新建旅行</button><nav>{navItems.map((item) => <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => onView(item.id)}><i>{item.image ? <img src={item.image} alt="" /> : item.id === "settings" ? <SettingsIcon /> : item.icon}</i>{item.label}</button>)}</nav><div className="sidebar-illustration"><img src="./assets/bontrip-travel.png" alt="旅行小猫" /><p>在路上，<br />收集风景，<br />也收集自己。</p></div></aside>;
 }
 
 function MobileNav({ view, onView }: { view: ViewName; onView: (value: ViewName) => void }) {
@@ -517,14 +528,14 @@ function MobileNav({ view, onView }: { view: ViewName; onView: (value: ViewName)
 
 function Topbar({ trip, view, onSettings, onExportHtml, onExportPng, busy }: { trip: Trip; view: ViewName; onSettings: () => void; onExportHtml: () => void; onExportPng: () => void; busy: boolean }) {
   const title = navItems.find((item) => item.id === view)?.label || trip.title;
-  return <header className="topbar export-hide"><div><span className="eyebrow">{trip.startDate} — {trip.endDate}</span><h1>{view === "trip" ? trip.title : title}</h1></div><div className="top-actions"><button className="settings-shortcut" onClick={onSettings} aria-label="打开设置">⚙</button><button onClick={onExportHtml}>⇩ HTML</button><button onClick={onExportPng} disabled={busy}>{busy ? "整理中…" : "⇩ PNG"}</button></div></header>;
+  return <header className="topbar export-hide"><div><span className="eyebrow">{trip.startDate} — {trip.endDate}</span><h1>{view === "trip" ? trip.title : title}</h1></div><div className="top-actions"><button className="settings-shortcut" onClick={onSettings} aria-label="打开设置"><SettingsIcon /></button><button onClick={onExportHtml}>⇩ HTML</button><button onClick={onExportPng} disabled={busy}>{busy ? "整理中…" : "⇩ PNG"}</button></div></header>;
 }
 
 function HomeView({ document, onOpenTrip, onCover, onNew }: { document: TravelDocument; onOpenTrip: (id: string) => void; onCover: (id: string, file: File) => void; onNew: () => void }) {
   return <section className="home-page"><header className="page-intro"><span className="eyebrow">MY TRAVEL CARDS</span><h2>下一次出发，想去哪里？</h2><p>把散落在地图、票夹和脑海里的小念头，收进一张张旅行卡片。</p></header><div className="trip-library">{document.trips.map((trip, index) => <article className={`library-trip ${trip.cover ? "has-cover" : ""}`} key={trip.id} style={{ backgroundColor: ["#ead8ef", "#dcefd9", "#f4dfc7"][index % 3] }}>{trip.cover && <img src={trip.cover} alt={`${trip.title}封面`} />}<button className="library-trip-open" onClick={() => onOpenTrip(trip.id)}><span>已保存</span><h3>{trip.title}</h3><p>{trip.startDate} 至 {trip.endDate}</p><strong>{trip.cities.length} 个城市 · {trip.cities.flatMap((city) => city.days.flatMap((day) => day.places)).length} 个地点</strong><i>{trip.cities.slice(0, 3).map((city) => city.name.slice(0, 1)).join(" · ")}</i></button><label className="trip-cover-upload">▣ {trip.cover ? "更换封面" : "设置封面"}<input type="file" accept="image/*" onChange={(event) => event.target.files?.[0] && onCover(trip.id, event.target.files[0])} /></label></article>)}<button className="library-trip add" onClick={onNew}><span>＋</span><h3>新建一段旅行</h3></button></div></section>;
 }
 
-function TripView({ refElement, trip, city, busy, onOpenCity, onCover, onEditCity, onRemoveCity, onPlaceImage, onNewCity, onNewJournal, onNewDay, onRemoveDay, onNewPlace, onSummarize, onToggleLock, onRemovePlace, onOptimize, onAssistant, onExpense, onTicket }: { refElement: React.RefObject<HTMLDivElement | null>; trip: Trip; city: City; busy: string; onOpenCity: (id: string) => void; onCover: (city: City, file: File) => void; onEditCity: (id: string) => void; onRemoveCity: (id: string) => void; onPlaceImage: (dayId: string, placeId: string, files: File[]) => void; onNewCity: () => void; onNewJournal: () => void; onNewDay: () => void; onRemoveDay: (dayId: string) => void; onNewPlace: (dayId: string) => void; onSummarize: (dayId: string, place: Place) => void; onToggleLock: (dayId: string, placeId: string) => void; onRemovePlace: (dayId: string, placeId: string) => void; onOptimize: () => void; onAssistant: () => void; onExpense: () => void; onTicket: () => void }) {
+function TripView({ detail, onBack, refElement, trip, city, busy, onOpenCity, onCover, onEditCity, onRemoveCity, onPlaceImage, onNewCity, onNewJournal, onNewDay, onRemoveDay, onNewPlace, onSummarize, onToggleLock, onRemovePlace, onOptimize, onAssistant, onExpense, onTicket }: { detail: boolean; onBack: () => void; refElement: React.RefObject<HTMLDivElement | null>; trip: Trip; city: City; busy: string; onOpenCity: (id: string) => void; onCover: (city: City, file: File) => void; onEditCity: (id: string) => void; onRemoveCity: (id: string) => void; onPlaceImage: (dayId: string, placeId: string, files: File[]) => void; onNewCity: () => void; onNewJournal: () => void; onNewDay: () => void; onRemoveDay: (dayId: string) => void; onNewPlace: (dayId: string) => void; onSummarize: (dayId: string, place: Place) => void; onToggleLock: (dayId: string, placeId: string) => void; onRemovePlace: (dayId: string, placeId: string) => void; onOptimize: () => void; onAssistant: () => void; onExpense: () => void; onTicket: () => void }) {
   const onRandomTrack = undefined;
   const onAiTrack = undefined;
   useEffect(() => {
@@ -538,12 +549,13 @@ function TripView({ refElement, trip, city, busy, onOpenCity, onCover, onEditCit
   return <div className="trip-page" ref={refElement}>
     <section className="export-only export-title"><span>TRAVEL CARD · {trip.cities.length} STOPS</span><h1>{trip.title}</h1><p>{trip.startDate} — {trip.endDate}</p><small>{routeTitle}</small></section>
     <section className="trip-heading"><div><span className="eyebrow">{routeTitle}</span><p>{trip.startDate} — {trip.endDate}</p></div><MusicCard trip={trip} busy={busy === "track"} onRandom={onRandomTrack} onAi={onAiTrack} /></section>
-    <section className="city-strip"><header><div><h2>城市卡片</h2><span>{trip.cities.length} STOPS</span></div><button className="text-button export-hide" onClick={onNewCity}>＋ 添加城市</button></header><div>{trip.cities.map((item) => <CityCard key={item.id} city={item} tripStartDate={trip.startDate} active={item.id === city.id} onOpen={() => onOpenCity(item.id)} onCover={(file) => onCover(item, file)} />)}<button className="city-add-card export-hide" onClick={onNewCity}>＋<span>下一座城市</span></button></div></section>
-    <div className="trip-workspace"><section className="itinerary-card">
+    {!detail && <section className="city-strip city-overview"><header><div><h2>城市卡片</h2><span>{trip.cities.length} STOPS</span></div><button className="text-button export-hide" onClick={onNewCity}>＋ 添加城市</button></header><div>{trip.cities.map((item) => <CityCard key={item.id} city={item} tripStartDate={trip.startDate} active={item.id === city.id} onOpen={() => onOpenCity(item.id)} onCover={(file) => onCover(item, file)} />)}<button className="city-add-card export-hide" onClick={onNewCity}>＋<span>下一座城市</span></button></div></section>}
+    {detail && <button className="text-button city-back export-hide" onClick={onBack}>← 所有城市</button>}
+    {detail && <div className="trip-workspace"><section className="itinerary-card">
       <header className="section-title-row"><div><span className="eyebrow">TODAY IN {city.englishName.toUpperCase()}</span><h2>{city.name} · 顺路行程</h2><p>{city.note}</p></div><div className="itinerary-heading-actions export-hide"><button className="text-button" onClick={onNewJournal}>＋ 写 Journal</button><button className="text-button" onClick={onNewDay}>＋ 新增一天</button><button className="primary-button" onClick={onOptimize} disabled={busy === "route"}>{busy === "route" ? "正在整理…" : "✦ 重新排顺"}</button></div></header>
       <CityJournal city={city} onAdd={onNewJournal} />
       {city.days.length ? city.days.map((day) => <DaySection key={day.id} day={day} onAdd={() => onNewPlace(day.id)} onRemove={() => onRemoveDay(day.id)}>{day.places.map((place, index) => <PlaceRow key={place.id} place={place} city={city} index={index} isLast={index === day.places.length - 1} busy={busy === place.id} onSummarize={() => onSummarize(day.id, place)} onToggleLock={() => onToggleLock(day.id, place.id)} onRemove={() => onRemovePlace(day.id, place.id)} onImages={(files) => onPlaceImage(day.id, place.id, files)} />)}</DaySection>) : <EmptyDay onAdd={() => { onNewDay(); }} />}
-    </section><aside className="trip-side export-hide"><section className="quick-card assistant-quick"><span>✦</span><div><h3>行程助手</h3><p>一起整理地点、看点与每天的节奏。</p></div><button onClick={onAssistant}>聊一聊</button></section><section className="quick-card"><span>▦</span><div><h3>随手记账</h3><p>{trip.expenses.length} 笔旅行支出已经收好。</p></div><button onClick={onExpense}>记一笔</button></section><section className="quick-card"><span>▱</span><div><h3>票据夹</h3><p>{trip.tickets.length} 张车票、门票与预订单。</p></div><button onClick={onTicket}>加票据</button></section></aside></div>
+    </section><aside className="trip-side export-hide"><section className="quick-card assistant-quick"><span>✦</span><div><h3>行程助手</h3><p>一起整理地点、看点与每天的节奏。</p></div><button onClick={onAssistant}>聊一聊</button></section><section className="quick-card"><span>▦</span><div><h3>随手记账</h3><p>{trip.expenses.length} 笔旅行支出已经收好。</p></div><button onClick={onExpense}>记一笔</button></section><section className="quick-card"><span>▱</span><div><h3>票据夹</h3><p>{trip.tickets.length} 张车票、门票与预订单。</p></div><button onClick={onTicket}>加票据</button></section></aside></div>}
   </div>;
 }
 

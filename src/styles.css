@@ -824,3 +824,32 @@ a { color: inherit; }
   .city-cover-card, .city-cover-card:first-child, .city-add-card { grid-column: 1; width: 100%; min-height: 225px; }
   .city-cover-card:first-child { min-height: 285px; }
 }
+
+/* City overview and the persistent travel soundtrack. */
+.city-back { margin-bottom: 12px; }
+.city-overview > div { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); overflow: visible; }
+.city-overview .city-cover-card { min-height: 280px; }
+.breakfast-badge { border: 0; border-radius: 0; background: transparent; padding: 0; gap: 8px; font-size: 10px; }
+.breakfast-badge img { width: 66px; height: 66px; padding: 0; background: transparent; border-radius: 0; }
+.breakfast-list-icon { width: 46px; height: 46px; border: 0; background: transparent; border-radius: 0; }
+.breakfast-list-icon img { width: 46px; height: 46px; }
+.breakfast-choice-icon { width: 64px; height: 64px; border: 0; border-radius: 0; background: transparent; }
+.breakfast-choice-icon img { width: 64px; height: 64px; }
+.breakfast-choice { grid-template-columns: 64px minmax(0, 1fr); }
+.top-actions button { font-family: Georgia, "Songti SC", serif; font-size: 12px; letter-spacing: .03em; }
+.top-actions .settings-shortcut { display: grid; place-items: center; color: var(--ink); }
+.travel-bgm { position: fixed; right: 24px; bottom: 105px; z-index: 45; }
+.travel-bgm button { display: flex; align-items: center; gap: 7px; padding: 8px 12px; border: 2px solid var(--ink); border-radius: 15px; background: #fffaf0; color: var(--ink); font: 700 11px Georgia, "Songti SC", serif; box-shadow: 3px 3px 0 rgba(26,39,68,.18); }
+.travel-bgm span { color: var(--red); font-size: 20px; }
+@media (max-width: 680px) {
+  .city-overview > div { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .city-overview .city-cover-card, .city-overview .city-cover-card:first-child, .city-overview .city-add-card { grid-column: auto; min-height: 225px; }
+  .city-overview .plain-city-button strong, .city-overview .city-cover-card:first-child .plain-city-button strong { font-size: 19px; }
+  .city-overview .city-cover-copy { right: 10px; left: 10px; }
+  .city-counts { flex-wrap: wrap; gap: 5px; }
+  .breakfast-badge img { width: 56px; height: 56px; }
+  .breakfast-badge { font-size: 9px; }
+  .travel-bgm { right: 12px; bottom: calc(158px + env(safe-area-inset-bottom)); }
+  .top-actions button { min-width: 38px; padding-inline: 7px; font-size: 0; }
+  .top-actions button:after { font: 700 10px Georgia, "Songti SC", serif !important; }
+}
