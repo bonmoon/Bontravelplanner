@@ -13,6 +13,9 @@ import { TicketEditor } from "./TicketEditor";
 import { TicketsView } from "./TicketsView";
 import { exportTicketsHtml } from "./ticketExport";
 import { tripFromAssistant } from "./assistantTrip";
+import { StickerProvider } from "./Stickers";
+import { applyRecordEdits } from "./assistantEdits";
+import { PlaceEditor } from "./PlaceEditor";
 
 const navItems: Array<{ id: ViewName; label: string; icon: string; image?: string }> = [
   { id: "home", label: "首页", icon: "⌂", image: "./assets/bontrip-home.png" },
@@ -59,6 +62,7 @@ function App() {
   const [expenseDraft, setExpenseDraft] = useState("");
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [editingTicketId, setEditingTicketId] = useState("");
+  const [editingPlace, setEditingPlace] = useState<{ cityId: string; placeId: string } | null>(null);
   const exportRef = useRef<HTMLDivElement>(null);
   const importRef = useRef<HTMLInputElement>(null);
   const bulkImportRef = useRef<HTMLInputElement>(null);
@@ -69,6 +73,7 @@ function App() {
 
   const trip = document.trips.find((item) => item.id === document.activeTripId) || document.trips[0];
   const city = trip?.cities.find((item) => item.id === activeCityId) || trip?.cities[0];
+  const placeToEdit = editingPlace && trip?.cities.find((item) => item.id === editingPlace.cityId)?.days.flatMap((day) => day.places).find((item) => item.id === editingPlace.placeId);
   const allPlaces = city?.days.flatMap((day) => day.places) || [];
 
   useEffect(() => {
@@ -90,6 +95,14 @@ function App() {
   }, [trip?.id, activeCityId]);
 
   useEffect(() => { window.scrollTo({ top: 0, behavior: "smooth" }); }, [view]);
+  useEffect(() => {
+    const edit = (event: Event) => setEditingPlace((event as CustomEvent<{ cityId: string; placeId: string }>).detail);
+    const closeMenus = (event: Event) => window.document.querySelectorAll<HTMLDetailsElement>(".place-actions details[open]").forEach((menu) => { if (event.type === "keydown" ? (event as globalThis.KeyboardEvent).key === "Escape" : !menu.contains(event.target as Node)) menu.open = false; });
+    window.addEventListener("travel-place-edit", edit);
+    window.document.addEventListener("pointerdown", closeMenus);
+    window.document.addEventListener("keydown", closeMenus);
+    return () => { window.removeEventListener("travel-place-edit", edit); window.document.removeEventListener("pointerdown", closeMenus); window.document.removeEventListener("keydown", closeMenus); };
+  }, []);
 
 
   function showToast(message: string) {
@@ -202,15 +215,16 @@ function App() {
 
 
   function applyAssistantOperations(operations: AssistantOperation[]) {
+    applyRecordEdits(trip, operations);
     const categories: PlaceCategory[] = ["景点", "美食", "交通", "住宿", "购物"];
     const ticketColors: Record<TicketKind, string> = { 火车票: "#efd5cf", 登机牌: "#d9e1ed", 酒店: "#efe2bd", 门票: "#dbe7d5", 预约: "#ead8e8", 通票: "#d8e5e1" };
     updateTrip((current) => {
-      let next = current;
+      let next = applyRecordEdits(current, operations);
       operations.forEach((operation) => {
         if (operation.type === "add_city") {
           const raw = operation.city;
           const days = Array.isArray(raw.days) && raw.days.length ? raw.days.map((day) => ({ id: uid("day"), date: day.date || `Day ${next.cities.length + 1}`, weekday: day.weekday || "", title: day.title || "顺路的一天", places: (day.places || []).map((place) => ({ id: uid("place"), name: place.name || "待补地点", mapQuery: place.mapQuery || "", category: categories.includes(place.category) ? place.category : "景点", time: place.time || "待安排", endTime: place.endTime || "", summary: place.summary || "", highlights: place.highlights || [], duration: place.duration || "待安排", mapUrl: place.mapUrl || "" })) })) : [{ id: uid("day"), date: "Day 1", weekday: "", title: "抵达与散步", places: [] }];
-          next = { ...next, cities: [...next.cities, { id: uid("city"), name: raw.name, englishName: raw.englishName || raw.name, country: raw.country || "", dates: raw.dates || "待安排", note: raw.note || "给这座城市留一点偶遇。", color: raw.color || "#e4ddcf", journal: [], days }] };
+          next = { ...next, cities: [...next.cities, { id: uid("city"), name: raw.name, englishName: raw.englishName || raw.name, country: raw.country || "", startDate: raw.startDate, endDate: raw.endDate, dateMode: raw.startDate ? "stay" : undefined, dates: raw.dates || "待安排", note: raw.note || "给这座城市留一点偶遇。", color: raw.color || "#e4ddcf", journal: [], days }] };
         }
         if (operation.type === "add_place") {
           const targetIndex = Math.max(0, next.cities.findIndex((item) => operation.cityName && item.name.includes(operation.cityName)));
@@ -411,7 +425,7 @@ function App() {
     <>
     <TravelBgm />
     {introOpen && <OpeningIntro onDone={() => setIntroOpen(false)} />}
-    <div className="app-shell">
+    <StickerProvider document={document} change={setDocument}><div className="app-shell">
       <Sidebar view={view} onView={(next) => { setCityDetail(false); setView(next); }} onNewTrip={() => setModal("trip")} />
       <main className="main-shell">
         <Topbar trip={trip} view={view} onSettings={() => setView("settings")} onExportHtml={doExportHtml} onExportPng={doExportPng} busy={busy === "export"} />
@@ -462,13 +476,14 @@ function App() {
         if (!current.days.length) return { ...current, days: [{ id: uid("day"), date: "Day 1", weekday: "", title: "抵达与散步", places: [created] }] };
         return { ...current, days: current.days.map((day) => day.id === modalDayId ? { ...day, places: [...day.places, created] } : day) };
       }); setModal("none"); }} />}
+      {placeToEdit && editingPlace && <PlaceEditor key={placeToEdit.id} place={placeToEdit} onClose={() => setEditingPlace(null)} onSave={(edited) => { updateTrip((current) => ({ ...current, cities: current.cities.map((item) => item.id === editingPlace.cityId ? { ...item, days: item.days.map((day) => ({ ...day, places: day.places.map((place) => place.id === edited.id ? edited : place).sort((a,b) => (a.time || "99:99").localeCompare(b.time || "99:99")) })) } : item) })); setEditingPlace(null); showToast("地点已更新"); }} />}
       {modal === "ticket" && <TicketEditor settings={settings} cityId={city?.id || trip.cities[0]?.id || ""} onClose={() => setModal("none")} onCreate={(created) => { updateTrip((current) => ({ ...current, tickets: [created, ...current.tickets] })); setModal("none"); showToast("票据已经收好了"); }} />}
       {modal === "editTicket" && <TicketEditor settings={settings} initial={trip.tickets.find((item) => item.id === editingTicketId)} cityId={city?.id || trip.cities[0]?.id || ""} onClose={() => setModal("none")} onCreate={(edited) => { updateTrip((current) => ({ ...current, tickets: current.tickets.map((item) => item.id === editingTicketId ? { ...edited, id: item.id } : item) })); setModal("none"); showToast("票据已经更新"); }} />}
       {modal === "expense" && city && <ExpenseModal draft={expenseDraft} onDraft={setExpenseDraft} busy={busy === "expense"} onQuick={quickExpense} onClose={() => setModal("none")} onManual={(created) => { updateTrip((current) => ({ ...current, expenses: [created, ...current.expenses] })); setModal("none"); showToast("这一笔已经记下"); }} cityId={city.id} />}
       {modal === "route" && city && <RouteModal city={city} optimized={optimized} onClose={() => setModal("none")} onAccept={acceptOptimization} />}
       <FloatingAssistant open={assistantOpen} onOpen={() => setAssistantOpen(true)} onClose={() => setAssistantOpen(false)} trip={trip} draft={chatDraft} onDraft={setChatDraft} onSend={sendChat} busy={busy === "chat"} onTicket={() => setModal("ticket")} onExpense={() => setModal("expense")} />
       <div className={`toast ${toast ? "show" : ""}`}>{toast}</div>
-    </div>
+    </div></StickerProvider>
     </>
   );
 }
@@ -563,7 +578,16 @@ function Topbar({ trip, view, onSettings, onExportHtml, onExportPng, busy }: { t
 }
 
 function HomeView({ document, onOpenTrip, onCover, onNew }: { document: TravelDocument; onOpenTrip: (id: string) => void; onCover: (id: string, file: File) => void; onNew: () => void }) {
-  return <section className="home-page"><header className="page-intro"><span className="eyebrow">MY TRAVEL CARDS</span><h2>下一次出发，想去哪里？</h2><p>把散落在地图、票夹和脑海里的小念头，收进一张张旅行卡片。</p></header><div className="trip-library">{document.trips.map((trip, index) => <article className={`library-trip ${trip.cover ? "has-cover" : ""}`} key={trip.id} style={{ backgroundColor: ["#ead8ef", "#dcefd9", "#f4dfc7"][index % 3] }}>{trip.cover && <img src={trip.cover} alt={`${trip.title}封面`} />}<button className="library-trip-open" onClick={() => onOpenTrip(trip.id)}><span>已保存</span><h3>{trip.title}</h3><p>{trip.startDate} 至 {trip.endDate}</p><strong>{trip.cities.length} 个城市 · {trip.cities.flatMap((city) => city.days.flatMap((day) => day.places)).length} 个地点</strong><i>{trip.cities.slice(0, 3).map((city) => city.name.slice(0, 1)).join(" · ")}</i></button><label className="trip-cover-upload">▣ {trip.cover ? "更换封面" : "设置封面"}<input type="file" accept="image/*" onChange={(event) => event.target.files?.[0] && onCover(trip.id, event.target.files[0])} /></label></article>)}<button className="library-trip add" onClick={onNew}><span>＋</span><h3>新建一段旅行</h3></button></div></section>;
+  return <section className="home-page"><header className="page-intro"><span className="eyebrow">THE TRAVEL COLLECTION</span><h2>把世界，收成一本。</h2><p>每一次出发，都是新的一页。</p></header>
+    <div className="trip-library magazine-library">{document.trips.map((trip, index) => {
+      const cover = trip.cover || trip.cities.find((city) => city.cover)?.cover;
+      return <article className={`library-trip ${cover ? "has-cover" : ""}`} key={trip.id} style={{ backgroundColor: ["#e8c547", "#dce4cd", "#f1d7c5"][index % 3] }}>
+        {cover && <img src={cover} alt={`${trip.title}封面`} />}
+        <button className="library-trip-open" onClick={() => onOpenTrip(trip.id)}><span className="library-issue">VOL. {String(index+1).padStart(2,"0")}</span><div><h3>{trip.title}</h3><p>{trip.startDate} — {trip.endDate}</p><strong>{trip.cities.length} 座城市 · {trip.cities.flatMap((city) => city.days.flatMap((day) => day.places)).length} 个地点</strong></div></button>
+        <label className="trip-cover-upload" title="编辑旅行封面">▣<span>封面</span><input type="file" accept="image/*" onChange={(event) => { const file=event.target.files?.[0]; if(file) onCover(trip.id,file); event.target.value=""; }} /></label>
+      </article>;
+    })}<button className="library-trip add" onClick={onNew}><span>＋</span><h3>新建一段旅行</h3><small>YOUR NEXT CHAPTER</small></button></div>
+  </section>;
 }
 
 function TripView({ detail, onBack, refElement, trip, city, busy, onOpenCity, onCover, onEditCity, onRemoveCity, onPlaceImage, onNewCity, onNewJournal, onNewDay, onRemoveDay, onNewPlace, onSummarize, onToggleLock, onRemovePlace, onOptimize, onAssistant, onExpense, onTicket }: { detail: boolean; onBack: () => void; refElement: React.RefObject<HTMLDivElement | null>; trip: Trip; city: City; busy: string; onOpenCity: (id: string) => void; onCover: (city: City, file: File) => void; onEditCity: (id: string) => void; onRemoveCity: (id: string) => void; onPlaceImage: (dayId: string, placeId: string, files: File[]) => void; onNewCity: () => void; onNewJournal: () => void; onNewDay: () => void; onRemoveDay: (dayId: string) => void; onNewPlace: (dayId: string) => void; onSummarize: (dayId: string, place: Place) => void; onToggleLock: (dayId: string, placeId: string) => void; onRemovePlace: (dayId: string, placeId: string) => void; onOptimize: () => void; onAssistant: () => void; onExpense: () => void; onTicket: () => void }) {
@@ -623,7 +647,7 @@ function AssistantView({ trip, draft, onDraft, onSend, busy, onOptimize, onExpen
 
 function FloatingAssistant({ open, onOpen, onClose, trip, draft, onDraft, onSend, busy, onTicket, onExpense }: { open: boolean; onOpen: () => void; onClose: () => void; trip: Trip; draft: string; onDraft: (value: string) => void; onSend: (event: FormEvent) => void; busy: boolean; onTicket: () => void; onExpense: () => void }) {
   return <aside className={`floating-assistant export-hide ${open ? "open" : ""}`}>
-    {open && <section className="floating-assistant-panel"><header><img src="./assets/travel-assistant-avatar.png" alt="旅行助手 Avatar" /><div><strong>旅行助手</strong><small>DeepSeek · 可以直接修改这趟旅行</small></div><button onClick={onClose} aria-label="收起旅行助手">×</button></header><div className="floating-assistant-messages">{trip.chats.slice(-5).map((message) => <article key={message.id} className={message.role}><span>{message.role === "assistant" ? "旅" : "我"}</span><p>{message.content}</p></article>)}{busy && <article className="assistant"><span>旅</span><p>正在把内容整理进旅行卡…</p></article>}</div><div className="floating-assistant-quick"><button onClick={onTicket}>＋ 票据</button><button onClick={onExpense}>＋ 记账</button><button onClick={() => onDraft("城市：\n日期：\n请把下面的攻略正文整理成行程，保留原有地点，安排建议时间：\n")}>＋ 攻略</button><button onClick={() => onDraft("帮我把当前城市的路线重新排顺并调整建议时间")}>排顺路线</button></div><form onSubmit={onSend}><textarea value={draft} disabled={busy} onChange={(event) => onDraft(event.target.value)} onKeyDown={sendOnEnter} placeholder="粘贴攻略正文，写上城市和日期，例如：维也纳，2026-09-17。整理成当天行程并安排时间…" /><button disabled={busy || !draft.trim()}>➤</button></form></section>}
+    {open && <section className="floating-assistant-panel"><header><img src="./assets/travel-assistant-avatar.png" alt="旅行助手 Avatar" /><div><strong>旅行助手</strong><small>DeepSeek · 可以直接修改这趟旅行</small></div><button onClick={onClose} aria-label="收起旅行助手">×</button></header><div className="floating-assistant-messages">{trip.chats.map((message) => <article key={message.id} className={message.role}><span>{message.role === "assistant" ? "旅" : "我"}</span><p>{message.content}</p></article>)}{busy && <article className="assistant"><span>旅</span><p>正在把内容整理进旅行卡…</p></article>}</div><div className="floating-assistant-quick"><button onClick={onTicket}>＋ 票据</button><button onClick={onExpense}>＋ 记账</button><button onClick={() => onDraft("城市：\n日期：\n请把下面的攻略正文整理成行程，保留原有地点，安排建议时间：\n")}>＋ 攻略</button><button onClick={() => onDraft("帮我把当前城市的路线重新排顺并调整建议时间")}>排顺路线</button></div><form onSubmit={onSend}><textarea value={draft} disabled={busy} onChange={(event) => onDraft(event.target.value)} onKeyDown={sendOnEnter} placeholder="粘贴攻略正文，写上城市和日期，例如：维也纳，2026-09-17。整理成当天行程并安排时间…" /><button disabled={busy || !draft.trim()}>➤</button></form></section>}
     <button className="floating-assistant-trigger" onClick={open ? onClose : onOpen} aria-label={open ? "收起旅行助手" : "打开旅行助手"}><img src="./assets/travel-assistant-avatar.png" alt="" /><span>{open ? "×" : "问问旅行助手"}</span></button>
   </aside>;
 }
@@ -656,7 +680,7 @@ function NewTripModal({ onClose, onCreate }: { onClose: () => void; onCreate: (t
 function NewCityModal({ initial, tripStartDate, onClose, onCreate }: { initial?: City; tripStartDate: string; onClose: () => void; onCreate: (city: City) => void }) {
   const defaultStart = initial?.startDate || looseDateToIso(initial?.dates || "", tripStartDate, 0);
   const defaultEnd = initial?.endDate || looseDateToIso(initial?.dates || "", tripStartDate, 1) || defaultStart;
-  function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const data = new FormData(event.currentTarget); const startDate = String(data.get("startDate") || ""); const endDate = String(data.get("endDate") || startDate); const city: City = { id: initial?.id || uid("city"), name: String(data.get("name")), englishName: String(data.get("english") || "New city"), country: String(data.get("country") || ""), startDate, endDate, dates: cityDateRange(startDate, endDate), note: String(data.get("note") || "在这里留一点空白给偶遇。"), color: String(data.get("color") || "#e7dfc9"), cover: initial?.cover, journal: initial?.journal || [], days: initial?.days || [{ id: uid("day"), date: startDate || "Day 1", weekday: "", title: "抵达与散步", places: [] }] }; onCreate(city); }
+  function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const data = new FormData(event.currentTarget); const startDate = String(data.get("startDate") || ""); const endDate = String(data.get("endDate") || startDate); const city: City = { ...initial, dateMode: "stay", id: initial?.id || uid("city"), name: String(data.get("name")), englishName: String(data.get("english") || "New city"), country: String(data.get("country") || ""), startDate, endDate, dates: cityDateRange(startDate, endDate), note: String(data.get("note") || "在这里留一点空白给偶遇。"), color: String(data.get("color") || "#e7dfc9"), cover: initial?.cover, journal: initial?.journal || [], days: initial?.days || [{ id: uid("day"), date: startDate || "Day 1", weekday: "", title: "抵达与散步", places: [] }] }; onCreate(city); }
   return <Modal title={initial ? "编辑城市卡" : "添加一座城市"} eyebrow={initial ? "EDIT STOP" : "NEXT STOP"} onClose={onClose}><form className="modal-form" onSubmit={submit}><div className="form-row"><label><span>城市</span><input name="name" required placeholder="维也纳" defaultValue={initial?.name} /></label><label><span>英文名 / 当地名称</span><input name="english" placeholder="Vienna / Wien" defaultValue={initial?.englishName} /></label></div><label><span>国家 / 地区（用于限定地图搜索）</span><input name="country" placeholder="Austria" defaultValue={initial?.country} /></label><div className="form-row"><label><span>到达日期</span><input name="startDate" type="date" required defaultValue={defaultStart} /></label><label><span>离开日期</span><input name="endDate" type="date" defaultValue={defaultEnd} /></label></div><label><span>城市小记</span><textarea name="note" placeholder="想在这座城市留下什么？" defaultValue={initial?.note} /></label><label><span>卡片颜色</span><input name="color" type="color" defaultValue={initial?.color || "#e7dfc9"} /></label><footer><button type="button" onClick={onClose}>取消</button><button className="primary-button">{initial ? "保存并重排" : "放进旅程"}</button></footer></form></Modal>;
 }
 

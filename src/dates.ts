@@ -6,7 +6,8 @@ function yearFrom(value: string): number {
 
 export function looseDateToIso(value: string, tripDate: string, position = 0): string {
   if (!value) return "";
-  const direct = value.match(/(20\d{2})[.\/-](\d{1,2})[.\/-](\d{1,2})/);
+  const fullDates = [...value.matchAll(/(20\d{2})[.\/-](\d{1,2})[.\/-](\d{1,2})/g)];
+  const direct = fullDates[Math.min(position, Math.max(0, fullDates.length - 1))];
   if (direct) return `${direct[1]}-${direct[2].padStart(2, "0")}-${direct[3].padStart(2, "0")}`;
   const matches = [...value.matchAll(/(\d{1,2})[.\/-](\d{1,2})/g)];
   const selected = matches[Math.min(position, Math.max(0, matches.length - 1))];
@@ -30,6 +31,7 @@ function datedDays(days: DayPlan[], tripDate: string): string[] {
 
 /** Once itinerary days have real dates, they become the source of truth for the city card. */
 export function cityDatesFromDays(city: City, tripDate: string): Pick<City, "startDate" | "endDate" | "dates"> | null {
+  if (city.dateMode === "stay" && city.startDate) return { startDate: city.startDate, endDate: city.endDate || city.startDate, dates: cityDateRange(city.startDate, city.endDate || city.startDate) };
   const dates = datedDays(city.days, tripDate);
   if (!dates.length) return null;
   const startDate = dates[0];

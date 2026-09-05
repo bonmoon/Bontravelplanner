@@ -77,6 +77,23 @@ async function run() {
   assert.equal(digest(exported.trips[0].tickets[0].qrCode), digest(qr1));
   assert.equal(digest(exported.trips[0].tickets[0].qrCode2), digest(qr2));
   URL.revokeObjectURL(link.href);
+  const { cityDatesFromDays, looseDateToIso } = load('dates');
+  const { applyRecordEdits } = load('assistantEdits');
+  const stay = { ...city, startDate: '2026-09-26', endDate: '2026-09-27', dateMode: 'stay', days: [{ ...city.days[0], date: '2026-09-27' }] };
+  assert.equal(cityDatesFromDays(stay, trip.startDate).dates, '09.26 – 09.27');
+  assert.equal(cityDatesFromDays({ ...stay, dateMode: 'days' }, trip.startDate).dates, '09.27');
+  assert.equal(looseDateToIso('2026-09-26 — 2026-09-27', trip.startDate, 1), '2026-09-27');
+  const edited = applyRecordEdits(trip, [{ type: 'edit_record', entity: 'city', id: city.id, changes: { startDate: '2026-09-26', endDate: '2026-09-27' } }]);
+  assert.equal(edited.cities[0].dateMode, 'stay');
+  assert.equal(edited.cities[0].days[0].places[0].image, city.days[0].places[0].image);
+  assert.throws(() => applyRecordEdits(trip, [{ type: 'edit_record', entity: 'city', id: 'missing', changes: { name: '新名' } }]), /找不到/);
+  assert.throws(() => applyRecordEdits(trip, [{ type: 'edit_record', entity: 'city', id: city.id, changes: { cover: 'bad' } }]), /不受支持/);
+  const portable = { ...backup, stickerLibrary: [{id:'art',image:qr1,name:'贴纸'}], stickers:[{id:'s',assetId:'art',target:'city:vienna',x:20,y:30,size:24,rotation:-8,note:'记得预约'}], trips:[{...backup.trips[0],chats:Array.from({length:30},(_,i)=>({id:String(i),role:'user',content:`对话 ${i}`,createdAt:'2026-09-05'}))}] };
+  exportJson(portable);
+  const restored = JSON.parse(await (await nativeFetch(link.href)).text());
+  assert.deepEqual(restored, portable);
+  URL.revokeObjectURL(link.href);
+  console.log('PASS: stay dates, derived dates, full date ranges, safe record edits, all 30 chats and sticker backup round-trip');
   console.log('PASS: empty/length/malformed/schema retries, bounded retry, auth errors, body timeout, dated guide, new trip, original preservation, QR byte-identical JSON export');
 }
 run().catch(error => { console.error(error); process.exitCode = 1; }).finally(() => { global.fetch = nativeFetch; });

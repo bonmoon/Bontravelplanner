@@ -1,7 +1,9 @@
+import { createPortal } from "react-dom";
 import type { City, DayPlan, Place, Ticket } from "./types";
 import { appleMapsUrl, googleMapsUrl } from "./maps";
 import { cityDatesFromDays } from "./dates";
 import { ticketAttachments, ticketFields } from "./tickets";
+import { StickerLayer } from "./Stickers";
 
 export const categoryIcon: Record<Place["category"], string> = {
   景点: "✦",
@@ -12,7 +14,7 @@ export const categoryIcon: Record<Place["category"], string> = {
 };
 
 export function Modal({ title, eyebrow, children, onClose, wide = false }: { title: string; eyebrow?: string; children: React.ReactNode; onClose: () => void; wide?: boolean }) {
-  return (
+  return createPortal(
     <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
       <section className={`modal-card ${wide ? "wide" : ""}`} role="dialog" aria-modal="true" aria-label={title}>
         <header>
@@ -21,7 +23,7 @@ export function Modal({ title, eyebrow, children, onClose, wide = false }: { tit
         </header>
         {children}
       </section>
-    </div>
+    </div>, document.body
   );
 }
 
@@ -30,6 +32,7 @@ export function CityCard({ city, tripStartDate, active, onOpen, onCover }: { cit
   const displayDates = cityDatesFromDays(city, tripStartDate)?.dates || city.dates;
   return (
     <article className={`city-cover-card ${city.cover ? "has-cover" : ""} ${active ? "active" : ""}`} style={{ backgroundColor: city.color }} onClick={onOpen}>
+      <StickerLayer target={`city:${city.id}`} />
       <div className="city-card-actions export-hide"><label aria-label={`更换${city.name}封面`} title="更换封面" onClick={(event) => event.stopPropagation()}>▣<input type="file" accept="image/*" onChange={(event) => event.target.files?.[0] && onCover(event.target.files[0])} /></label><button aria-label={`编辑${city.name}`} onClick={(event) => { event.stopPropagation(); window.dispatchEvent(new CustomEvent("travel-city-edit", { detail: city.id })); }}>✎</button><button aria-label={`删除${city.name}`} onClick={(event) => { event.stopPropagation(); window.dispatchEvent(new CustomEvent("travel-city-remove", { detail: city.id })); }}>×</button></div>
       <div className="city-cover-copy">
         <button className="plain-city-button" onClick={onOpen}>
@@ -49,6 +52,7 @@ export function TicketCard({ ticket, city, onEdit, onRemove, onPreview }: { tick
   const attachment = files[0];
   return (
     <article className={`ticket-card kind-${ticket.kind}`} style={{ backgroundColor: ticket.color }}>
+      <StickerLayer target={`ticket:${ticket.id}`} />
       <div className="ticket-mark"><span>{ticket.kind === "火车票" ? "▥" : ticket.kind === "酒店" ? "⌂" : "✦"}</span><small>{ticket.kind}</small></div>
       <div className="ticket-main">
         {ticket.backgroundImage && <img className="ticket-background" src={ticket.backgroundImage} alt="" />}
@@ -107,10 +111,11 @@ export function PlaceRow({
         </div>
         <div className="place-actions export-hide">
           <button onClick={onSummarize} disabled={busy} title="补充看点">{busy ? "…" : "✦"}</button>
-          <button onClick={onToggleLock} title={place.locked ? "解除固定" : "固定时间"}>{place.locked ? "●" : "○"}</button>
+          <button onClick={() => window.dispatchEvent(new CustomEvent("travel-place-edit", { detail: { cityId: city.id, placeId: place.id } }))} title="编辑地点" aria-label={`编辑${place.name}`}>✎</button>
           <button className="remove-place-button" onClick={onRemove} title="移除地点">×</button>
           <details>
             <summary>•••</summary>
+            <button onClick={onToggleLock}>{place.locked ? "解除固定时间" : "固定时间"}</button>
             <div><a href={appleMapsUrl(place, city)} target="_blank" rel="noreferrer">Apple 地图</a><a href={googleMapsUrl(place, city)} target="_blank" rel="noreferrer">Google 地图</a><button onClick={onRemove}>移除</button></div>
           </details>
         </div>

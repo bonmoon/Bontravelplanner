@@ -214,7 +214,7 @@ export async function parseExpenses(settings: AssistantSettings, text: string, c
 
 export async function commandTrip(settings: AssistantSettings, trip: Trip, message: string, activeCity?: string): Promise<AssistantCommandResult> {
   if (/xiaohongshu\.com|xhslink\.com/.test(message) && message.replace(/https?:\/\/\S+/g, "").trim().length < 70) return { reply: "请粘贴小红书攻略正文，并在开头写城市和日期，例如：维也纳，2026-09-17。收到正文后我会整理地点、看点和建议时间，配图可以之后再加。", operations: [] };
-  const itinerary = trip.cities.map((city) => ({ city: city.name, dates: city.dates, note: city.note, days: city.days.map((day) => ({ date: day.date, title: day.title, places: day.places.map((place) => ({ name: place.name, category: place.category, time: place.time, duration: place.duration, locked: !!place.locked })) })) }));
+  const itinerary = trip.cities.map((city) => ({ id: city.id, city: city.name, startDate: city.startDate, endDate: city.endDate, dates: city.dates, note: city.note, journal: city.journal?.map(({id,title,date,text}) => ({id,title,date,text})), days: city.days.map((day) => ({ id: day.id, date: day.date, title: day.title, places: day.places.map((place) => ({ name: place.name, category: place.category, time: place.time, duration: place.duration, locked: !!place.locked })) })) }));
   const ledger = trip.expenses.map((item) => ({ id: item.id, title: item.title, amount: item.amount, currency: item.currency, date: item.date, category: item.category, city: trip.cities.find((city) => city.id === item.cityId)?.name || "" }));
   const tripYear = trip.startDate.match(/20\d{2}/)?.[0] || trip.endDate.match(/20\d{2}/)?.[0] || String(new Date().getFullYear());
   const today = new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Shanghai" }).format(new Date());
@@ -223,10 +223,14 @@ export async function commandTrip(settings: AssistantSettings, trip: Trip, messa
     { role: "system", content: `${baseSystem}
 你同时是可以写入旅行资料的操作助手。只输出 JSON：{"reply":"简短确认","operations":[]}。
 可用操作：
+{"type":"edit_record","entity":"trip|city|day|ticket|journal","id":"上下文中已有记录的准确ID","changes":{"字段":"新值"}}。
+仅修改用户指定字段；不能修改ID、图片、附件、二维码或数组。trip可改title/subtitle/startDate/endDate；city可改name/englishName/country/note/startDate/endDate；day可改date/title；ticket可改title/provider/date/time/meta/code/passengers/departureTime/arrivalTime/arrivalDate/checkInDate/checkOutDate/checkInTime/checkOutTime/includesBreakfast（布尔值）；journal可改title/date/text。修改已有内容用edit_record，不得重复新增。无法确定记录时先询问。到达和离开日期必须分别写入城市startDate/endDate，不要因为只安排了某一天的景点而缩短停留范围。
+当前旅行ID：${trip.id}；现有票据：${JSON.stringify(trip.tickets.map(({id,title,provider,date,time,checkInDate,checkOutDate}) => ({id,title,provider,date,time,checkInDate,checkOutDate})))}。
+
 {"type":"create_trip","trip":{"title":"新旅行标题","startDate":"YYYY-MM-DD","endDate":"YYYY-MM-DD","cities":[{"name":"城市","englishName":"英文名","days":[{"date":"YYYY-MM-DD","title":"当天主题","places":[{"name":"地点","category":"景点","time":"09:00","endTime":"10:00","duration":"1小时","summary":"看点","highlights":[]}]}]}]}}；
 只有用户明确要求创建新旅行或新旅程时使用 create_trip，且整次回复只返回这一项操作，新行程全部放在 trip.cities 中。普通添加一天、粘贴攻略时按用户指定城市日期使用 plan_day。不能用 add_city 假装已经创建一趟新旅行。
 {"type":"open_ticket"}、{"type":"open_expense"}、{"type":"optimize_route","date":"可选的YYYY-MM-DD","cityName":"目标城市"}；
-{"type":"add_city","city":{"name":"城市","englishName":"英文","dates":"日期","note":"小记","days":[{"date":"日期","title":"主题","places":[{"name":"中文名","mapQuery":"官方英文或当地名称, City, Country","category":"景点|美食|交通|住宿|购物","time":"10:00","duration":"1小时","summary":"看点"}]}]}}；
+{"type":"add_city","city":{"name":"城市","englishName":"英文","startDate":"YYYY-MM-DD","endDate":"YYYY-MM-DD","dates":"日期","note":"小记","days":[{"date":"日期","title":"主题","places":[{"name":"中文名","mapQuery":"官方英文或当地名称, City, Country","category":"景点|美食|交通|住宿|购物","time":"10:00","duration":"1小时","summary":"看点"}]}]}}；
 {"type":"add_place","cityName":"已有城市","dayTitle":"已有日期主题","place":{"name":"中文名","mapQuery":"官方英文或当地名称, City, Country","category":"景点|美食|交通|住宿|购物","time":"时间","duration":"时长","summary":"看点"}}；
 {"type":"update_place","cityName":"已有城市","placeName":"已有地点的准确名称","changes":{"mapQuery":"官方英文或当地名称, City, Country","summary":"可选的新说明"}}；
 {"type":"plan_day","cityName":"已有城市","date":"已有日期","title":"当天路线主题","replace":true,"places":[{"name":"中文名","mapQuery":"官方英文或当地名称, City, Country","category":"景点|美食|交通|住宿|购物","time":"09:00","endTime":"10:30","duration":"1.5小时","summary":"40-70字看点","highlights":["看点1","看点2"]}]}；

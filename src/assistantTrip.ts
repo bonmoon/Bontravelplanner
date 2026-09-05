@@ -16,8 +16,8 @@ export function tripFromAssistant(raw: Partial<Trip>, fallbackDate: string): Tri
         return { id: uid("place"), name: place.name, mapQuery: typeof place.mapQuery === "string" ? place.mapQuery : "", category: categories.includes(place.category) ? place.category : "景点" as PlaceCategory, time: typeof place.time === "string" ? place.time : "待安排", endTime: typeof place.endTime === "string" ? place.endTime : "", duration: typeof place.duration === "string" ? place.duration : "待安排", summary: typeof place.summary === "string" ? place.summary : "", highlights: Array.isArray(place.highlights) ? place.highlights.filter((value) => typeof value === "string") : [] };
       }).sort((a, b) => (a.time.match(/\d{1,2}:\d{2}/)?.[0].padStart(5,"0") || "99:99").localeCompare(b.time.match(/\d{1,2}:\d{2}/)?.[0].padStart(5,"0") || "99:99")) };
     }).sort((a, b) => a.date.localeCompare(b.date));
-    return syncCityDatesFromDays({ id: uid("city"), name: city.name, englishName: typeof city.englishName === "string" ? city.englishName : city.name, dates: "", note: typeof city.note === "string" ? city.note : "从攻略收好的地点", color: "#eadccf", days }, reference);
+    return syncCityDatesFromDays({ id: uid("city"), startDate: looseDateToIso(city.startDate || "", reference), endDate: looseDateToIso(city.endDate || "", reference), dateMode: city.startDate ? "stay" : "days", name: city.name, englishName: typeof city.englishName === "string" ? city.englishName : city.name, dates: "", note: typeof city.note === "string" ? city.note : "从攻略收好的地点", color: "#eadccf", days }, reference);
   });
-  const dates = cities.flatMap((city) => city.days.map((day) => day.date)).sort();
+  const dates = cities.flatMap((city) => [city.startDate || "", city.endDate || "", ...city.days.map((day) => day.date)].filter(Boolean)).sort();
   return { id: uid("trip"), title: raw.title.trim(), startDate: dates[0], endDate: dates.at(-1)!, subtitle: typeof raw.subtitle === "string" ? raw.subtitle : "从攻略整理的新旅程", cities: sortCitiesByDate(cities, reference), tickets: [], expenses: [], track: { title: "", artist: "", reason: "", url: "" }, chats: [], updatedAt: new Date().toISOString() };
 }

@@ -903,3 +903,28 @@ a { color: inherit; }
   .top-actions button { min-width: 38px; padding-inline: 7px; font-size: 0; }
   .top-actions button:after { font: 700 10px Georgia, "Songti SC", serif !important; }
 }
+/* Travel collection & reusable memo stickers */
+.magazine-library { display:grid; grid-template-columns:repeat(auto-fit,minmax(270px,1fr)); gap:24px; }
+.magazine-library .library-trip { position:relative; overflow:hidden; min-height:340px; border:3px solid var(--ink); border-radius:24px; box-shadow:5px 6px 0 rgba(26,39,68,.16); transform:none; }
+.magazine-library .library-trip > img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; opacity:1; }
+.magazine-library .library-trip-open { position:absolute; inset:0; width:100%; height:100%; display:flex; flex-direction:column; align-items:flex-start; justify-content:space-between; text-align:left; padding:24px; background:none; border:0; color:var(--ink); }
+.magazine-library .library-trip-open h3 { font-size:32px; margin:0 0 12px; }
+.magazine-library .library-trip-open p { font-size:13px; }
+.magazine-library .library-trip.has-cover .library-trip-open { color:#fffaf0; text-shadow:0 2px 3px #17243d; }
+.magazine-library .library-issue { background:var(--gold); color:var(--ink); text-shadow:none; padding:6px 9px; font:700 12px monospace; letter-spacing:.15em; }
+.magazine-library .trip-cover-upload { top:14px; right:14px; bottom:auto; padding:10px; border:2px solid var(--ink); border-radius:14px; background:#fffaf0; color:var(--ink); }
+.sticker-layer { position:absolute; inset:0; z-index:5; pointer-events:none; }
+.placed-sticker { position:absolute; aspect-ratio:1; padding:0!important; border:0!important; background:none!important; box-shadow:none!important; pointer-events:auto; cursor:grab; touch-action:none; user-select:none; }
+.placed-sticker img,.sticker-library img { display:block; width:100%; height:100%; object-fit:contain; filter:drop-shadow(3px 0 white) drop-shadow(-3px 0 white) drop-shadow(0 3px white) drop-shadow(0 -3px white) drop-shadow(1px 3px 1px #1a274433); }
+.placed-sticker span { display:block; background:#fffaf0; color:#1a2744; border-radius:5px; padding:4px; font-size:11px; line-height:1.3; white-space:pre-wrap; overflow-wrap:anywhere; max-height:70px; overflow:auto; }
+.sticker-add { position:absolute; z-index:7; bottom:12px; right:12px; border:1px solid var(--ink); border-radius:12px; background:#fffaf0; color:var(--ink); padding:6px 9px; font-size:11px; }
+.city-cover-card.active:after { display:none; }
+.sticker-library { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px; margin:20px 0; }
+.sticker-library button { padding:12px; aspect-ratio:1; background:#e7dfc9; border:0; border-radius:16px; }
+.city-card-actions { z-index:8; }
+.place-actions details > button { display:block; background:#fffaf0; }
+@media(max-width:600px) { .magazine-library { grid-template-columns:1fr; } .magazine-library .library-trip { min-height:300px; } }
+.magazine-library .library-trip.has-cover .library-trip-open:before { display:none; }
+.magazine-library .library-trip-open p,.magazine-library .library-trip-open strong { color:inherit; }
+.magazine-library .trip-cover-upload { left:auto; }
+.placed-sticker span { min-width:72px; max-width:120px; font-size:10px; max-height:38px; text-align:left; }

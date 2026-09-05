@@ -35,6 +35,7 @@ export interface JournalEntry {
 }
 
 export interface City {
+  dateMode?: "stay" | "days";
   id: string;
   name: string;
   englishName: string;
@@ -129,10 +130,15 @@ export interface Trip {
 }
 
 export interface TravelDocument {
+  stickerLibrary?: StickerAsset[];
+  stickers?: StickerPlacement[];
   version: 1;
   activeTripId: string;
   trips: Trip[];
 }
+
+export interface StickerAsset { id: string; image: string; name: string }
+export interface StickerPlacement { id: string; assetId: string; target: string; x: number; y: number; size: number; rotation: number; note: string }
 
 export interface AssistantSettings {
   baseUrl: string;
@@ -153,6 +159,7 @@ export interface MusicLibraryItem {
 }
 
 export type AssistantOperation =
+  | { type: "edit_record"; entity: "trip" | "city" | "day" | "ticket" | "journal"; id: string; changes: Record<string, string | boolean> }
   | { type: "create_trip"; trip: Partial<Trip> & Pick<Trip, "title"> }
   | { type: "open_ticket" }
   | { type: "open_expense" }
