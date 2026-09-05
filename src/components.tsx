@@ -1,6 +1,7 @@
 import type { City, DayPlan, Place, Ticket } from "./types";
 import { appleMapsUrl, googleMapsUrl } from "./maps";
 import { cityDatesFromDays } from "./dates";
+import { ticketAttachments, ticketFields } from "./tickets";
 
 export const categoryIcon: Record<Place["category"], string> = {
   景点: "✦",
@@ -44,18 +45,19 @@ export function CityCard({ city, tripStartDate, active, onOpen, onCover }: { cit
 }
 
 export function TicketCard({ ticket, city, onEdit, onRemove, onPreview }: { ticket: Ticket; city?: City; onEdit: () => void; onRemove: () => void; onPreview: () => void }) {
-  const attachment = ticket.attachment || ticket.image;
-  const attachmentType = ticket.attachmentType || (attachment?.startsWith("data:application/pdf") ? "pdf" : "image");
+  const files = ticketAttachments(ticket);
+  const attachment = files[0];
   return (
     <article className={`ticket-card kind-${ticket.kind}`} style={{ backgroundColor: ticket.color }}>
       <div className="ticket-mark"><span>{ticket.kind === "火车票" ? "▥" : ticket.kind === "酒店" ? "⌂" : "✦"}</span><small>{ticket.kind}</small></div>
       <div className="ticket-main">
+        {ticket.backgroundImage && <img className="ticket-background" src={ticket.backgroundImage} alt="" />}
         <span className="ticket-provider">{ticket.provider}</span>
         <h3>{ticket.title}</h3>
         {ticket.kind === "酒店" && ticket.includesBreakfast && <span className="breakfast-badge" title="含早餐"><img src="./assets/breakfast-croissant.png" alt="" />含早餐</span>}
-        <div className="ticket-fields"><span><small>日期</small>{ticket.date}</span><span><small>时间</small>{ticket.time}</span><span><small>信息</small>{ticket.meta}</span></div>
+        <div className="ticket-fields">{ticketFields(ticket).map(([label, value]) => <span key={label}><small>{label}</small>{value}</span>)}</div>
       </div>
-      <div className={`ticket-stub ${attachment ? "has-ticket-image" : ""}`}>{attachment ? <button className={`ticket-image-preview ${attachmentType === "pdf" ? "is-pdf" : ""}`} onClick={onPreview} onDoubleClick={onPreview} aria-label={`预览${ticket.title}完整附件`}>{attachmentType === "pdf" ? <span className="ticket-pdf-cover"><b>PDF</b><small>可预览多页</small></span> : <img src={attachment} alt={`${ticket.title}票据`} />}<span>查看完整{attachmentType === "pdf" ? " PDF" : "图片"}</span></button> : <>{ticket.qrCode ? <img className="ticket-qr" src={ticket.qrCode} alt={`${ticket.title}二维码`} /> : <span className="fake-code">{ticket.code}</span>}<button className="ticket-image-add export-hide" onClick={onEdit}>＋ 图片 / PDF</button><small>{city?.name || "旅程"}</small></>}</div>
+      <div className="ticket-stub ticket-stub-files">{ticket.qrCode && <button className="ticket-qr-button" onClick={onPreview} aria-label="放大二维码"><img className="ticket-qr" src={ticket.qrCode} alt={`${ticket.title}二维码`} /></button>}{attachment ? <button className="ticket-attachment-button" onClick={onPreview} onDoubleClick={onPreview} aria-label={`预览${ticket.title}完整附件`}>{attachment.type === "image" ? <img src={attachment.data} alt="票据附件" /> : <b>PDF</b>}<small>查看附件 · {files.length}</small></button> : <button className="ticket-image-add export-hide" onClick={onEdit}>＋ 图片 / PDF</button>}<small>{city?.name || "旅程"}</small></div>
       <div className="ticket-card-actions export-hide"><button className="ticket-edit" onClick={onEdit} aria-label={`编辑${ticket.title}`}>✎ 编辑</button><button className="ticket-delete" onClick={onRemove} aria-label={`删除${ticket.title}`}>× 删除</button></div>
     </article>
   );

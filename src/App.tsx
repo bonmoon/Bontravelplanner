@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { applyOptimizedDays, commandTrip, optimizeCity, parseExpenses, summarizePlace, testAssistantConnection, type OptimizedDay } from "./assistant";
-import { CityCard, DaySection, Modal, PlaceRow, TicketCard, categoryIcon } from "./components";
+import { CityCard, DaySection, Modal, PlaceRow, categoryIcon } from "./components";
 import { exportElementPng, exportJson, exportTripHtml } from "./exporters";
 import { downloadTripPackageTemplate, importTripPackage } from "./bulkPackage";
 import { cityDateRange, looseDateToIso, sortCitiesByDate, syncCityDatesFromDays } from "./dates";
@@ -9,6 +9,9 @@ import { sampleDocument } from "./sample";
 import { loadAssistantSettings, loadDocument, requestPersistentStorage, saveAssistantSettings, saveDocument } from "./storage";
 import type { AssistantOperation, AssistantSettings, City, Expense, JournalEntry, Place, PlaceCategory, Ticket, TicketKind, TravelDocument, Trip, ViewName } from "./types";
 import { uid } from "./types";
+import { TicketEditor } from "./TicketEditor";
+import { TicketsView } from "./TicketsView";
+import { exportTicketsHtml } from "./ticketExport";
 
 const navItems: Array<{ id: ViewName; label: string; icon: string; image?: string }> = [
   { id: "home", label: "首页", icon: "⌂", image: "./assets/bontrip-home.png" },
@@ -28,16 +31,6 @@ function readImage(file: File): Promise<string> {
     const reader = new FileReader();
     reader.onload = () => resolve(String(reader.result));
     reader.onerror = () => reject(new Error("这张图片暂时无法读取"));
-    reader.readAsDataURL(file);
-  });
-}
-
-function readAttachment(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    if (file.size > 20 * 1024 * 1024) return reject(new Error("附件请控制在 20MB 以内"));
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result));
-    reader.onerror = () => reject(new Error("这个附件暂时无法读取"));
     reader.readAsDataURL(file);
   });
 }
@@ -328,7 +321,15 @@ function App() {
     }
   }
 
-  function doExportHtml() {
+  async function doExportHtml() {
+    if (view === "tickets" && trip) {
+      if (busy === "ticket-export") return;
+      setBusy("ticket-export"); showToast("正在打包完整票据、二维码与 PDF…");
+      try { await exportTicketsHtml(trip, collectPageStyles()); showToast("完整离线票夹已导出"); }
+      catch (error) { showToast(error instanceof Error ? error.message : "导出未完成，请重试"); }
+      finally { setBusy(""); }
+      return;
+    }
     if (!exportRef.current || !trip) return;
     exportTripHtml(trip, exportRef.current.outerHTML, collectPageStyles());
     showToast("HTML 已经准备好了");
@@ -414,7 +415,7 @@ function App() {
             />
           )}
           {view === "map" && city && <MapView city={city} places={allPlaces} onOpenCity={openCity} />}
-          {view === "tickets" && <TicketsView trip={trip} onAdd={() => setModal("ticket")} onEdit={(id) => { setEditingTicketId(id); setModal("editTicket"); }} onRemove={(id) => { const target = trip.tickets.find((item) => item.id === id); if (window.confirm(`删除票据“${target?.title || "未命名票据"}”？`)) updateTrip((current) => ({ ...current, tickets: current.tickets.filter((item) => item.id !== id) })); }} />}
+          {view === "tickets" && <TicketsView onExport={() => void doExportHtml()} trip={trip} onAdd={() => setModal("ticket")} onEdit={(id) => { setEditingTicketId(id); setModal("editTicket"); }} onRemove={(id) => { const target = trip.tickets.find((item) => item.id === id); if (window.confirm(`删除票据“${target?.title || "未命名票据"}”？`)) updateTrip((current) => ({ ...current, tickets: current.tickets.filter((item) => item.id !== id) })); }} />}
           {view === "expenses" && <ExpensesView trip={trip} onAdd={() => setModal("expense")} onRemove={(id) => updateTrip((current) => ({ ...current, expenses: current.expenses.filter((item) => item.id !== id) }))} />}
           {view === "assistant" && <AssistantView trip={trip} draft={chatDraft} onDraft={setChatDraft} onSend={sendChat} busy={busy === "chat"} onOptimize={prepareOptimization} onExpense={() => setModal("expense")} />}
           {view === "settings" && <SettingsView settings={settings} onSettings={setSettings} onSave={saveSettings} onBackup={() => exportJson(document, trip.title)} onImport={() => importRef.current?.click()} onBulkImport={() => bulkImportRef.current?.click()} onDownloadTemplate={downloadTripPackageTemplate} onPersist={async () => showToast(await requestPersistentStorage() ? "这台设备会尽量长久保留旅行资料" : "浏览器会继续自动保存旅行资料")} />}
@@ -431,8 +432,8 @@ function App() {
         if (!current.days.length) return { ...current, days: [{ id: uid("day"), date: "Day 1", weekday: "", title: "抵达与散步", places: [created] }] };
         return { ...current, days: current.days.map((day) => day.id === modalDayId ? { ...day, places: [...day.places, created] } : day) };
       }); setModal("none"); }} />}
-      {modal === "ticket" && <NewTicketModal cityId={city?.id || trip.cities[0]?.id || ""} onClose={() => setModal("none")} onCreate={(created) => { updateTrip((current) => ({ ...current, tickets: [created, ...current.tickets] })); setModal("none"); showToast("票据已经收好了"); }} />}
-      {modal === "editTicket" && <NewTicketModal initial={trip.tickets.find((item) => item.id === editingTicketId)} cityId={city?.id || trip.cities[0]?.id || ""} onClose={() => setModal("none")} onCreate={(edited) => { updateTrip((current) => ({ ...current, tickets: current.tickets.map((item) => item.id === editingTicketId ? { ...edited, id: item.id } : item) })); setModal("none"); showToast("票据已经更新"); }} />}
+      {modal === "ticket" && <TicketEditor settings={settings} cityId={city?.id || trip.cities[0]?.id || ""} onClose={() => setModal("none")} onCreate={(created) => { updateTrip((current) => ({ ...current, tickets: [created, ...current.tickets] })); setModal("none"); showToast("票据已经收好了"); }} />}
+      {modal === "editTicket" && <TicketEditor settings={settings} initial={trip.tickets.find((item) => item.id === editingTicketId)} cityId={city?.id || trip.cities[0]?.id || ""} onClose={() => setModal("none")} onCreate={(edited) => { updateTrip((current) => ({ ...current, tickets: current.tickets.map((item) => item.id === editingTicketId ? { ...edited, id: item.id } : item) })); setModal("none"); showToast("票据已经更新"); }} />}
       {modal === "expense" && city && <ExpenseModal draft={expenseDraft} onDraft={setExpenseDraft} busy={busy === "expense"} onQuick={quickExpense} onClose={() => setModal("none")} onManual={(created) => { updateTrip((current) => ({ ...current, expenses: [created, ...current.expenses] })); setModal("none"); showToast("这一笔已经记下"); }} cityId={city.id} />}
       {modal === "route" && city && <RouteModal city={city} optimized={optimized} onClose={() => setModal("none")} onAccept={acceptOptimization} />}
       <FloatingAssistant open={assistantOpen} onOpen={() => setAssistantOpen(true)} onClose={() => setAssistantOpen(false)} trip={trip} draft={chatDraft} onDraft={setChatDraft} onSend={sendChat} busy={busy === "chat"} onTicket={() => setModal("ticket")} onExpense={() => setModal("expense")} />
@@ -581,20 +582,6 @@ function MapView({ city, places, onOpenCity }: { city: City; places: Place[]; on
   </section>;
 }
 
-function TicketsView({ trip, onAdd, onEdit, onRemove }: { trip: Trip; onAdd: () => void; onEdit: (id: string) => void; onRemove: (id: string) => void }) {
-  const [layout, setLayout] = useState<"cards" | "list">("cards");
-  const [preview, setPreview] = useState<Ticket | null>(null);
-  const tickets = useMemo(() => trip.tickets.map((ticket, index) => ({ ticket, index, date: looseDateToIso(ticket.date, trip.startDate) || "9999-12-31" })).sort((a, b) => a.date.localeCompare(b.date) || a.index - b.index).map(({ ticket }) => ticket), [trip.tickets, trip.startDate]);
-  const previewAttachment = preview?.attachment || preview?.image;
-  const previewIsPdf = preview?.attachmentType === "pdf" || previewAttachment?.startsWith("data:application/pdf");
-  return <section className="tickets-page">
-    <header className="page-intro row"><div><span className="eyebrow">TICKET POCKET</span><h2>一路收好的票据</h2><p>已按日期从早到晚排列，车票、门票和预订单都能离线翻出来。</p></div><div className="ticket-page-actions"><div className="ticket-view-toggle" aria-label="票据显示方式"><button className={layout === "cards" ? "active" : ""} onClick={() => setLayout("cards")}>▦ 卡片</button><button className={layout === "list" ? "active" : ""} onClick={() => setLayout("list")}>☷ 列表</button></div><button className="primary-button" onClick={onAdd}>＋ 添加票据</button></div></header>
-    {layout === "cards" ? <div className="ticket-grid">{tickets.map((ticket) => <TicketCard key={ticket.id} ticket={ticket} city={trip.cities.find((city) => city.id === ticket.cityId)} onEdit={() => onEdit(ticket.id)} onRemove={() => onRemove(ticket.id)} onPreview={() => setPreview(ticket)} />)}</div> : <div className="ticket-list">{tickets.map((ticket) => { const city = trip.cities.find((item) => item.id === ticket.cityId); const hasAttachment = ticket.attachment || ticket.image; return <article key={ticket.id}><time>{ticket.date || "待定"}</time><span className="ticket-list-kind">{ticket.kind}</span><div><strong>{ticket.title}{ticket.kind === "酒店" && ticket.includesBreakfast && <span className="breakfast-list-icon" title="含早餐"><img src="./assets/breakfast-croissant.png" alt="" /></span>}</strong><small>{ticket.provider} · {city?.name || "旅程"}</small></div><p>{ticket.time}<small>{ticket.meta}</small></p><div className="ticket-list-actions">{hasAttachment && <button onClick={() => setPreview(ticket)}>{ticket.attachmentType === "pdf" ? "PDF" : "▣"}</button>}<button onClick={() => onEdit(ticket.id)}>✎</button><button onClick={() => onRemove(ticket.id)}>×</button></div></article>; })}</div>}
-    {!tickets.length && <div className="empty-state"><span>▱</span><h3>票据夹还是空的</h3><p>把车票、门票和预订单收进来吧。</p><button className="primary-button" onClick={onAdd}>＋ 添加第一张票据</button></div>}
-    {preview && previewAttachment && <div className={`ticket-image-lightbox ${previewIsPdf ? "pdf-preview" : ""}`} role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setPreview(null)}><section role="dialog" aria-modal="true" aria-label={`${preview.title}完整附件`}><button onClick={() => setPreview(null)} aria-label="关闭完整附件">×</button>{previewIsPdf ? <iframe src={previewAttachment} title={`${preview.title} PDF 预览`} /> : <img src={previewAttachment} alt={`${preview.title}完整票据`} />}<strong>{preview.title}</strong></section></div>}
-  </section>;
-}
-
 function ExpensesView({ trip, onAdd, onRemove }: { trip: Trip; onAdd: () => void; onRemove: (id: string) => void }) {
   const totals = useMemo(() => Object.entries(trip.expenses.reduce<Record<string, number>>((acc, item) => ({ ...acc, [item.currency]: (acc[item.currency] || 0) + item.amount }), {})), [trip.expenses]);
   return <section className="expenses-page"><header className="page-intro row"><div><span className="eyebrow">TRAVEL LEDGER</span><h2>随手记下，回来再算</h2><p>每一笔都可以关联城市、日期和用途。</p></div><button className="primary-button" onClick={onAdd}>＋ 记一笔</button></header><div className="expense-layout"><section className="expense-summary"><small>旅行支出</small><div>{totals.map(([currency, amount]) => <strong key={currency}>{currency} {amount.toFixed(2)}</strong>)}</div><p>{trip.expenses.length} 笔 · {new Set(trip.expenses.map((item) => item.cityId)).size} 个城市</p></section><section className="expense-list">{trip.expenses.map((expense) => <article key={expense.id}><span>{expense.category === "交通" ? "↗" : expense.category === "餐饮" ? "◌" : expense.category === "门票" ? "▱" : "◇"}</span><div><strong>{expense.title}</strong><small>{trip.cities.find((city) => city.id === expense.cityId)?.name} · {expense.date}</small></div><b>{expense.currency} {expense.amount.toFixed(2)}</b><button onClick={() => onRemove(expense.id)}>×</button></article>)}</section></div></section>;
@@ -650,24 +637,9 @@ function NewPlaceModal({ onClose, onCreate }: { onClose: () => void; onCreate: (
   return <Modal title="添加一个地点" eyebrow="ADD A PLACE" onClose={onClose}><form className="modal-form" onSubmit={submit}><MultiImagePicker values={images} label={category === "美食" ? "美食照片" : "地点图片"} onChange={setImages} /><div className="category-picker">{(Object.keys(categoryIcon) as PlaceCategory[]).map((item) => <button type="button" key={item} className={category === item ? "active" : ""} onClick={() => setCategory(item)}>{categoryIcon[item]} {item}</button>)}</div><label><span>地点名称</span><input name="name" required placeholder="美泉宫" /></label><label><span>地图检索名</span><input name="mapQuery" placeholder="Schönbrunn Palace, Vienna, Austria" /></label><div className="form-row"><label><span>开始</span><input name="time" type="time" defaultValue="10:00" /></label><label><span>结束</span><input name="endTime" type="time" /></label></div><label><span>建议停留</span><input name="duration" defaultValue="1 小时" /></label><label><span>地图链接</span><input name="mapUrl" placeholder="粘贴 Apple 或 Google 地图地点" /></label><label><span>先记一点</span><textarea name="summary" placeholder="之后也可以让行程助手补完整" /></label><footer><button type="button" onClick={onClose}>取消</button><button className="primary-button">加入这一天</button></footer></form></Modal>;
 }
 
-function NewTicketModal({ cityId, initial, onClose, onCreate }: { cityId: string; initial?: Ticket; onClose: () => void; onCreate: (ticket: Ticket) => void }) {
-  const [kind, setKind] = useState<TicketKind>(initial?.kind || "火车票"); const colors: Record<TicketKind, string> = { 火车票: "#efd5cf", 登机牌: "#d9e1ed", 酒店: "#efe2bd", 门票: "#dbe7d5", 预约: "#ead8e8", 通票: "#d8e5e1" };
-  const [attachment, setAttachment] = useState(initial?.attachment || initial?.image || "");
-  const [attachmentType, setAttachmentType] = useState<"image" | "pdf">(initial?.attachmentType || (initial?.attachment?.startsWith("data:application/pdf") ? "pdf" : "image"));
-  const [includesBreakfast, setIncludesBreakfast] = useState(Boolean(initial?.includesBreakfast));
-  const [qrCode, setQrCode] = useState(initial?.qrCode || "");
-  function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const data = new FormData(event.currentTarget); onCreate({ id: initial?.id || uid("ticket"), kind, cityId: initial?.cityId || cityId, provider: String(data.get("provider") || kind), title: String(data.get("title")), date: String(data.get("date") || "待定"), time: String(data.get("time") || "待定"), meta: String(data.get("meta") || ""), code: String(data.get("code") || "TRIP"), color: colors[kind], attachment: attachment || undefined, attachmentType: attachment ? attachmentType : undefined, includesBreakfast: kind === "酒店" ? includesBreakfast : undefined, qrCode: qrCode || undefined }); }
-  return <Modal title={initial ? "编辑这张票据" : "收好一张票据"} eyebrow="TICKET POCKET" onClose={onClose}><form className="modal-form" onSubmit={submit}><AttachmentPicker value={attachment} type={attachmentType} label="完整票据图片或 PDF" onChange={(value, type) => { setAttachment(value); setAttachmentType(type); }} /><ImagePicker value={qrCode} label="票据二维码（可选）" square onChange={setQrCode} /><div className="category-picker">{(Object.keys(colors) as TicketKind[]).map((item) => <button type="button" key={item} className={kind === item ? "active" : ""} onClick={() => setKind(item)}>{item}</button>)}</div>{kind === "酒店" && <label className={`breakfast-choice ${includesBreakfast ? "active" : ""}`}><input type="checkbox" checked={includesBreakfast} onChange={(event) => setIncludesBreakfast(event.target.checked)} /><span className="breakfast-choice-icon"><img src="./assets/breakfast-croissant.png" alt="" /></span><strong>这份住宿包含早餐</strong><small>{includesBreakfast ? "会在住宿票据上显示可颂标记" : "点一下标记为含早餐"}</small></label>}<label><span>标题</span><input name="title" required placeholder="Zürich HB → Salzburg Hbf" defaultValue={initial?.title} /></label><label><span>提供方</span><input name="provider" placeholder="SBB Train" defaultValue={initial?.provider} /></label><div className="form-row"><label><span>日期</span><input name="date" type="date" defaultValue={initial?.date === "待定" ? "" : initial?.date} /></label><label><span>时间</span><input name="time" placeholder="08:32 → 15:02" defaultValue={initial?.time === "待定" ? "" : initial?.time} /></label></div><label><span>座位 / 房型 / 人数</span><input name="meta" placeholder="Coach 34 · Seat 54" defaultValue={initial?.meta} /></label><label><span>确认号</span><input name="code" placeholder="RJX 165" defaultValue={initial?.code} /></label><footer><button type="button" onClick={onClose}>取消</button><button className="primary-button">{initial ? "保存修改" : "收进票夹"}</button></footer></form></Modal>;
-}
-
 function ImagePicker({ value, label, onChange, square = false }: { value: string; label: string; onChange: (value: string) => void; square?: boolean }) {
   const [error, setError] = useState("");
   return <label className={`image-picker ${square ? "square" : ""}`}>{value ? <img src={value} alt={`${label}预览`} /> : <span><b>＋</b><strong>{label}</strong><small>从相册选择图片</small></span>}<input type="file" accept="image/*" onChange={async (event) => { const file = event.target.files?.[0]; if (!file) return; try { setError(""); onChange(await readImage(file)); } catch (reason) { setError(reason instanceof Error ? reason.message : "图片无法读取"); } }} />{value && <em>点击更换</em>}{error && <i>{error}</i>}</label>;
-}
-
-function AttachmentPicker({ value, type, label, onChange }: { value: string; type: "image" | "pdf"; label: string; onChange: (value: string, type: "image" | "pdf") => void }) {
-  const [error, setError] = useState("");
-  return <label className={`attachment-picker ${value ? "has-value" : ""}`}>{value ? type === "pdf" ? <span className="attachment-pdf-preview"><b>PDF</b><strong>多页文件已保存</strong><small>保存票据后可点按完整预览</small></span> : <img src={value} alt={`${label}预览`} /> : <span><b>＋</b><strong>{label}</strong><small>支持 JPG、PNG、HEIC 与多页 PDF</small></span>}<input type="file" accept="image/*,application/pdf,.pdf" onChange={async (event) => { const file = event.target.files?.[0]; event.target.value = ""; if (!file) return; const nextType = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf") ? "pdf" : "image"; try { setError(""); onChange(await readAttachment(file), nextType); } catch (reason) { setError(reason instanceof Error ? reason.message : "附件无法读取"); } }} />{value && <em>点击更换</em>}{error && <i>{error}</i>}</label>;
 }
 
 function MultiImagePicker({ values, label, onChange }: { values: string[]; label: string; onChange: (values: string[]) => void }) {

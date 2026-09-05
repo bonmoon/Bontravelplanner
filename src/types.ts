@@ -49,6 +49,15 @@ export interface City {
   days: DayPlan[];
 }
 
+export interface TicketAttachment {
+  id: string;
+  name: string;
+  data: string;
+  type: "image" | "pdf";
+  pages?: string[];
+  text?: string;
+}
+
 export interface Ticket {
   id: string;
   kind: TicketKind;
@@ -65,6 +74,16 @@ export interface Ticket {
   attachmentType?: "image" | "pdf";
   includesBreakfast?: boolean;
   qrCode?: string;
+  attachments?: TicketAttachment[];
+  backgroundImage?: string;
+  passengers?: string;
+  departureTime?: string;
+  arrivalTime?: string;
+  arrivalDate?: string;
+  checkInDate?: string;
+  checkOutDate?: string;
+  checkInTime?: string;
+  checkOutTime?: string;
 }
 
 export interface Expense {
