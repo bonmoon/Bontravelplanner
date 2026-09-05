@@ -1,6 +1,7 @@
 import type { AssistantCommandResult, AssistantOperation, AssistantSettings, City, DayPlan, Expense, Place, Trip, Ticket } from "./types";
 import { uid } from "./types";
 import { normalizeRoute, type OptimizedDay } from "./routePlanning";
+import { AssistantFormatError, parseAssistantJson, readAssistantContent } from "./assistantResponse";
 export type { OptimizedDay } from "./routePlanning";
 
 type JsonObject = Record<string, unknown>;
@@ -36,29 +37,20 @@ async function apiError(response: Response): Promise<Error> {
   return new Error(detail ? `DeepSeek 返回 ${response.status}：${detail}` : `DeepSeek 暂时没有回应（${response.status}）`);
 }
 
-function jsonFromText(text: string): JsonObject {
-  const cleaned = text.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
-  try {
-    return JSON.parse(cleaned) as JsonObject;
-  } catch {
-    const start = cleaned.indexOf("{");
-    const end = cleaned.lastIndexOf("}");
-    if (start >= 0 && end > start) return JSON.parse(cleaned.slice(start, end + 1)) as JsonObject;
-    throw new Error("这次没有整理好，请再试一次");
-  }
-}
+const jsonFromText = parseAssistantJson;
 
 async function ask(
   settings: AssistantSettings,
   messages: Array<{ role: "system" | "user" | "assistant"; content: string }>,
   json = false,
+  expectedArray?: string,
 ): Promise<string> {
   if (!settings.apiKey.trim()) throw new Error("请先在设置里连接旅行助手");
-  let response: Response;
   const controller = new AbortController();
   const timeout = window.setTimeout(() => controller.abort(), settings.model.includes("pro") ? 240_000 : 150_000);
   try {
-    response = await fetch(endpointFor(settings.baseUrl), {
+    for (let attempt = 0; attempt < (json ? 2 : 1); attempt++) {
+    const response = await fetch(endpointFor(settings.baseUrl), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -66,24 +58,37 @@ async function ask(
       },
       body: JSON.stringify({
         model: settings.model.trim() || "deepseek-v4-flash",
-        messages,
+        messages: attempt ? [...messages, { role: "user", content: "上次未生成完整资料。请重新按约定生成一个完整 JSON 对象，不要解释、代码围栏或思考过程；压缩描述，保留所有必要字段。" }] : messages,
         temperature: 0.45,
-        max_tokens: json ? 6000 : 2000,
+        max_tokens: json ? (/deepseek-v4/i.test(settings.model) ? (attempt ? 24576 : 16384) : 8192) : 2000,
+        stream: false,
+        ...(/deepseek-v4/i.test(settings.model) ? { thinking: { type: "disabled" } } : {}),
         ...(json ? { response_format: { type: "json_object" } } : {}),
       }),
       signal: controller.signal,
     });
+    if (!response.ok) throw await apiError(response);
+    try {
+      const payload: unknown = await response.json();
+      const content = readAssistantContent(payload);
+      if (!json) return content;
+      const parsed = parseAssistantJson(content);
+      if (expectedArray && !Array.isArray(parsed[expectedArray])) throw new AssistantFormatError("助手遗漏了行程操作列表，未修改行程，请重试");
+      return JSON.stringify(parsed);
+    } catch (error) {
+      if (json && attempt === 0 && (error instanceof AssistantFormatError || error instanceof SyntaxError)) continue;
+      if (error instanceof SyntaxError) throw new Error("API 没有返回可读取的数据，请检查接口地址；未修改行程");
+      throw error;
+    }
+    }
+    throw new Error("助手没有完成资料整理，未修改行程");
   } catch (error) {
-    if (controller.signal.aborted) throw new Error("模型等待超时，没有写入任何数据，请重试或切换 V4 Flash");
-    throw new Error(settings.baseUrl.startsWith("/") ? "本地连接没有启动，请改用官方地址 https://api.deepseek.com" : "DeepSeek 官方服务暂时无法连接，请检查网络后重试");
+    if (controller.signal.aborted) throw new Error("助手等待超时，未修改行程；请按天分批整理后重试");
+    if (error instanceof TypeError) throw new Error(settings.baseUrl.startsWith("/") ? "本地连接没有启动，请改用官方地址 https://api.deepseek.com" : "API 暂时无法连接，请检查网络和接口地址后重试");
+    throw error;
   } finally {
     window.clearTimeout(timeout);
   }
-  if (!response.ok) throw await apiError(response);
-  const payload = (await response.json()) as { choices?: Array<{ message?: { content?: string } }> };
-  const content = payload.choices?.[0]?.message?.content?.trim();
-  if (!content) throw new Error("这次没有整理好，请再试一次");
-  return content;
 }
 
 export async function testAssistantConnection(settings: AssistantSettings): Promise<string> {
@@ -159,7 +164,7 @@ export async function optimizeCity(settings: AssistantSettings, trip: Trip, city
       },
       { role: "user", content: `旅行：${trip.title}\n城市：${city.name}\n日期与地点：${JSON.stringify(days)}\n请整理成最顺、不过度拥挤的 json 行程。` },
     ],
-    true,
+    true, "days",
   );
   const result = jsonFromText(content);
   return normalizeRoute(city, result.days);
@@ -218,6 +223,8 @@ export async function commandTrip(settings: AssistantSettings, trip: Trip, messa
     { role: "system", content: `${baseSystem}
 你同时是可以写入旅行资料的操作助手。只输出 JSON：{"reply":"简短确认","operations":[]}。
 可用操作：
+{"type":"create_trip","trip":{"title":"新旅行标题","startDate":"YYYY-MM-DD","endDate":"YYYY-MM-DD","cities":[{"name":"城市","englishName":"英文名","days":[{"date":"YYYY-MM-DD","title":"当天主题","places":[{"name":"地点","category":"景点","time":"09:00","endTime":"10:00","duration":"1小时","summary":"看点","highlights":[]}]}]}]}}；
+只有用户明确要求创建新旅行或新旅程时使用 create_trip，且整次回复只返回这一项操作，新行程全部放在 trip.cities 中。普通添加一天、粘贴攻略时按用户指定城市日期使用 plan_day。不能用 add_city 假装已经创建一趟新旅行。
 {"type":"open_ticket"}、{"type":"open_expense"}、{"type":"optimize_route","date":"可选的YYYY-MM-DD","cityName":"目标城市"}；
 {"type":"add_city","city":{"name":"城市","englishName":"英文","dates":"日期","note":"小记","days":[{"date":"日期","title":"主题","places":[{"name":"中文名","mapQuery":"官方英文或当地名称, City, Country","category":"景点|美食|交通|住宿|购物","time":"10:00","duration":"1小时","summary":"看点"}]}]}}；
 {"type":"add_place","cityName":"已有城市","dayTitle":"已有日期主题","place":{"name":"中文名","mapQuery":"官方英文或当地名称, City, Country","category":"景点|美食|交通|住宿|购物","time":"时间","duration":"时长","summary":"看点"}}；
@@ -235,7 +242,7 @@ export async function commandTrip(settings: AssistantSettings, trip: Trip, messa
 信息不完整时不编造票号与价格；时间是规划建议。最多返回 12 个操作。` },
     { role: "user", content: `今天：${today}\n旅行年份：${tripYear}\n旅行名称：${trip.title}\n旅行风格：${trip.subtitle}\n当前旅行：${JSON.stringify(itinerary)}\n现有账目（修改时必须使用这里的 ID）：${JSON.stringify(ledger)}\n以下是最近对话，必须延续其上下文：${JSON.stringify(recentConversation)}\n用户最新输入：${message}` },
   ];
-  let content = await ask(settings, messages, true);
+  let content = await ask(settings, messages, true, "operations");
   let result = jsonFromText(content);
   const wantsFullPlan = !/(?:攻略|小红书|粘贴|以下|一个|一处|单个)/.test(message) && /(?:一日游|半日游|一天|全天|完整.{0,4}行程|规划.{0,6}(?:行程|路线)|(?:其他|主流|主要).{0,8}(?:景点|地点))/.test(message);
   const plannedCount = () => Array.isArray(result.operations) ? result.operations.reduce((total, raw) => {
@@ -243,11 +250,12 @@ export async function commandTrip(settings: AssistantSettings, trip: Trip, messa
     if (operation.type === "plan_day" && Array.isArray(operation.places)) return total + operation.places.length;
     if (operation.type === "add_place") return total + 1;
     if (operation.type === "add_city") return total + ((operation.city as City | undefined)?.days?.flatMap((day) => day.places).length || 0);
+    if (operation.type === "create_trip") return total + ((operation.trip as Trip | undefined)?.cities?.flatMap((city) => city.days?.flatMap((day) => day.places) || []).length || 0);
     return total;
   }, 0) : 0;
   const isRouteRequest = () => Array.isArray(result.operations) && result.operations.some((op) => op && op.type === "optimize_route");
   if (wantsFullPlan && !isRouteRequest() && plannedCount() < 4) {
-    content = await ask(settings, [...messages, { role: "assistant", content }, { role: "user", content: "这不是完整行程。请重做：使用 plan_day，一次给出至少 5 个顺路节点，包含上午、午餐、下午和傍晚，并保留我已指定的地点。只输出约定 JSON。" }], true);
+    content = await ask(settings, [...messages, { role: "assistant", content }, { role: "user", content: "这不是完整行程。请重做：使用 plan_day，一次给出至少 5 个顺路节点，包含上午、午餐、下午和傍晚，并保留我已指定的地点。只输出约定 JSON。" }], true, "operations");
     result = jsonFromText(content);
   }
   if (wantsFullPlan && !isRouteRequest() && plannedCount() < 4) throw new Error("模型返回的行程不完整，没有写入数据；请重试或切换模型");
