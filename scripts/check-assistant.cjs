@@ -1,0 +1,82 @@
+const fs = require('node:fs');
+const path = require('node:path');
+const assert = require('node:assert/strict');
+const { createHash } = require('node:crypto');
+const ts = require('typescript');
+const root = path.resolve(__dirname, '..');
+const cache = new Map();
+function load(name) {
+  const file = path.join(root, 'src', name + '.ts');
+  if (cache.has(file)) return cache.get(file);
+  const module = { exports: {} }; cache.set(file, module.exports);
+  const code = ts.transpileModule(fs.readFileSync(file, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
+  new Function('require', 'module', 'exports', code)((id) => id.startsWith('./') ? load(id.slice(2)) : require(id), module, module.exports);
+  return module.exports;
+}
+global.window = { setTimeout, clearTimeout, location: { protocol: 'http:' } };
+const nativeFetch = global.fetch;
+const { commandTrip, optimizeCity, applyOptimizedDays } = load('assistant');
+const { parseAssistantJson } = load('assistantResponse');
+const { tripFromAssistant } = load('assistantTrip');
+const { exportJson } = load('exporters');
+const settings = { apiKey: 'test-only', baseUrl: 'https://test.invalid', model: 'deepseek-v4-pro' };
+const city = { id: 'vienna', name: '维也纳', days: [{ id: 'sep17', date: '2026-09-17', title: '散步', places: ['A', 'B'].map(id => ({ id, name: id, time: '09:00', duration: '1小时', category: '景点', image: 'data:image/png;base64,original' })) }] };
+const trip = { id: 'old-trip', title: '旧旅行', startDate: '2026-09-01', endDate: '2026-09-30', cities: [city], expenses: [], tickets: [], chats: [] };
+const route = { days: [{ dayId: 'sep17', placeIds: ['B', 'A'] }] };
+const command = { reply: '已整理', operations: [{ type: 'plan_day', date: '2026-09-17', cityName: '维也纳', replace: false, places: [{ name: '美景宫', time: '09:00', endTime: '11:00' }] }] };
+const completion = (value, reason = 'stop') => ({ choices: [{ finish_reason: reason, message: { content: typeof value === 'string' ? value : JSON.stringify(value) } }] });
+let calls = [];
+function responses(values) {
+  calls = [];
+  global.fetch = async (_url, options) => {
+    calls.push(JSON.parse(options.body));
+    const value = values.shift(); assert.ok(value, 'unexpected extra API request');
+    return { ok: true, json: async () => value };
+  };
+}
+async function run() {
+  assert.deepEqual(parseAssistantJson('说明\n```json\n{"reply":"看 {这里}","operations":[]}\n```'), { reply: '看 {这里}', operations: [] });
+  assert.throws(() => parseAssistantJson('null'));
+  assert.throws(() => parseAssistantJson('[{"operations":[]}]'));
+  assert.throws(() => parseAssistantJson('{"operations":['));
+  responses([{ choices: [{ finish_reason: 'length', message: { content: '', reasoning_content: 'test reasoning' } }] }, completion(route)]);
+  const optimized = await optimizeCity(settings, trip, city);
+  assert.equal(calls.length, 2); assert.equal(calls[0].thinking.type, 'disabled'); assert.equal(calls[0].stream, false);
+  assert.equal(calls[0].model, settings.model); assert.ok(calls[1].max_tokens > calls[0].max_tokens);
+  assert.deepEqual(applyOptimizedDays(city, optimized).days[0].places.map(p => p.id), ['B', 'A']);
+  responses([completion('不是资料'), completion(command)]);
+  assert.equal((await commandTrip(settings, trip, '攻略：9月17日去美景宫', '维也纳')).operations[0].type, 'plan_day');
+  assert.equal(calls.length, 2);
+  responses([completion({ unexpected: true }), completion(command)]);
+  assert.equal((await commandTrip(settings, trip, '攻略：美景宫，9月17日', '维也纳')).operations.length, 1);
+  assert.equal(calls.length, 2);
+  responses([completion(''), completion('')]);
+  const before = JSON.stringify(trip);
+  await assert.rejects(commandTrip(settings, trip, '攻略：美景宫'), /空答案/);
+  assert.equal(calls.length, 2); assert.equal(JSON.stringify(trip), before);
+  let authCalls = 0;
+  global.fetch = async () => { authCalls++; return { ok: false, status: 401, json: async () => ({}) }; };
+  await assert.rejects(commandTrip(settings, trip, '攻略：美景宫'), /API Key/); assert.equal(authCalls, 1);
+  const draft = { title: '新旅程', cities: [{ name: '维也纳', days: [{ date: '2026-09-17', places: [{ name: '美景宫', time: '10:00' }, { name: '咖啡馆', time: '08:00' }] }] }] };
+  responses([completion({ reply: '创建完成', operations: [{ type: 'create_trip', trip: draft }] })]);
+  const created = tripFromAssistant((await commandTrip(settings, trip, '根据攻略创建新旅程，9月17日维也纳')).operations[0].trip, trip.startDate);
+  assert.notEqual(created.id, trip.id); assert.equal(created.startDate, '2026-09-17'); assert.equal(created.cities[0].days[0].places[0].name, '咖啡馆');
+  assert.equal(JSON.stringify(trip), before);
+  global.window.setTimeout = (callback) => setTimeout(callback, 10);
+  global.fetch = async (_url, options) => ({ ok: true, json: () => new Promise((_resolve, reject) => options.signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')))) });
+  await assert.rejects(commandTrip(settings, trip, '攻略：美景宫'), /超时/);
+  global.window.setTimeout = (callback) => { const timer = setTimeout(callback, 2000); timer.unref(); return timer; };
+  let link;
+  global.document = { createElement: () => (link = { click() {} }) };
+  const qr1 = 'data:image/png;base64,' + Buffer.from(Array.from({ length: 256 }, (_, i) => i)).toString('base64');
+  const qr2 = 'data:image/png;base64,' + Buffer.from('second passenger bytes').toString('base64');
+  const backup = { version: 1, activeTripId: trip.id, trips: [{ ...trip, tickets: [{ id: 'ticket', qrCode: qr1, qrCode2: qr2 }] }] };
+  exportJson(backup);
+  const exported = JSON.parse(await (await nativeFetch(link.href)).text());
+  const digest = (data) => createHash('sha256').update(Buffer.from(data.split(',')[1], 'base64')).digest('hex');
+  assert.equal(digest(exported.trips[0].tickets[0].qrCode), digest(qr1));
+  assert.equal(digest(exported.trips[0].tickets[0].qrCode2), digest(qr2));
+  URL.revokeObjectURL(link.href);
+  console.log('PASS: empty/length/malformed/schema retries, bounded retry, auth errors, body timeout, dated guide, new trip, original preservation, QR byte-identical JSON export');
+}
+run().catch(error => { console.error(error); process.exitCode = 1; }).finally(() => { global.fetch = nativeFetch; });

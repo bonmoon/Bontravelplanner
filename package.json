@@ -11,7 +11,8 @@
     "build": "tsc -b && node scripts/build.mjs",
     "local": "npm run build && node scripts/local-server.mjs",
     "preview": "vite preview",
-    "check": "tsc -b"
+    "check": "tsc -b",
+    "test:assistant": "node scripts/check-assistant.cjs"
   },
   "dependencies": {
     "fflate": "^0.8.2",

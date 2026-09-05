@@ -153,6 +153,7 @@ export interface MusicLibraryItem {
 }
 
 export type AssistantOperation =
+  | { type: "create_trip"; trip: Partial<Trip> & Pick<Trip, "title"> }
   | { type: "open_ticket" }
   | { type: "open_expense" }
   | { type: "optimize_route"; date?: string; cityName?: string }

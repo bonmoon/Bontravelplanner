@@ -12,6 +12,7 @@ import { uid } from "./types";
 import { TicketEditor } from "./TicketEditor";
 import { TicketsView } from "./TicketsView";
 import { exportTicketsHtml } from "./ticketExport";
+import { tripFromAssistant } from "./assistantTrip";
 
 const navItems: Array<{ id: ViewName; label: string; icon: string; image?: string }> = [
   { id: "home", label: "首页", icon: "⌂", image: "./assets/bontrip-home.png" },
@@ -291,11 +292,22 @@ function App() {
     setBusy("chat");
     try {
       const result = await commandTrip(settings, trip, content, city?.name);
+      const creation = result.operations.find((operation) => operation.type === "create_trip");
+      if (creation?.type === "create_trip") {
+        if (result.operations.length !== 1) throw new Error("新旅程与其他修改混在了一起，请单独发送新建旅程要求；未修改旅行");
+        const created = tripFromAssistant(creation.trip, trip.startDate);
+        created.chats = [userMessage, { id: uid("chat"), role: "assistant", content: `已创建「${created.title}」，共 ${created.cities.length} 座城市。可以继续补充图片或调整时间。`, createdAt: new Date().toISOString() }];
+        setDocument((current) => ({ ...current, trips: [created, ...current.trips], activeTripId: created.id }));
+        setActiveCityId(created.cities[0].id); setCityDetail(false); setView("trip");
+        showToast("新旅程已创建");
+        return;
+      }
       applyAssistantOperations(result.operations);
       updateTrip((current) => ({ ...current, chats: [...current.chats, { id: uid("chat"), role: "assistant", content: result.reply, createdAt: new Date().toISOString() }] }));
       if (result.operations.length) showToast(`旅行助手完成了 ${result.operations.length} 项修改`);
     } catch (error) {
       const message = error instanceof Error ? error.message : "旅行助手没有完成这次操作";
+      setChatDraft(content);
       updateTrip((current) => ({ ...current, chats: [...current.chats, { id: uid("chat"), role: "assistant", content: `没有写入：${message}`, createdAt: new Date().toISOString() }] }));
       showToast(message);
     } finally {
