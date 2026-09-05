@@ -4,7 +4,8 @@ import { CityCard, DaySection, Modal, PlaceRow, categoryIcon } from "./component
 import { exportElementPng, exportJson, exportTripHtml } from "./exporters";
 import { downloadTripPackageTemplate, importTripPackage } from "./bulkPackage";
 import { cityDateRange, looseDateToIso, sortCitiesByDate, syncCityDatesFromDays } from "./dates";
-import { appleMapsUrl, appleRouteUrl, googleMapsUrl, googleRouteUrl } from "./maps";
+import { CatCompanion, CatMusicControl } from "./TravelMusic";
+import { MapDesk } from "./MapDesk";
 import { sampleDocument } from "./sample";
 import { loadAssistantSettings, loadDocument, requestPersistentStorage, saveAssistantSettings, saveDocument } from "./storage";
 import type { AssistantOperation, AssistantSettings, City, Expense, JournalEntry, Place, PlaceCategory, Ticket, TicketKind, TravelDocument, Trip, ViewName } from "./types";
@@ -74,7 +75,6 @@ function App() {
   const trip = document.trips.find((item) => item.id === document.activeTripId) || document.trips[0];
   const city = trip?.cities.find((item) => item.id === activeCityId) || trip?.cities[0];
   const placeToEdit = editingPlace && trip?.cities.find((item) => item.id === editingPlace.cityId)?.days.flatMap((day) => day.places).find((item) => item.id === editingPlace.placeId);
-  const allPlaces = city?.days.flatMap((day) => day.places) || [];
 
   useEffect(() => {
     loadDocument()
@@ -423,7 +423,6 @@ function App() {
 
   return (
     <>
-    <TravelBgm />
     {introOpen && <OpeningIntro onDone={() => setIntroOpen(false)} />}
     <StickerProvider document={document} change={setDocument}><div className="app-shell">
       <Sidebar view={view} onView={(next) => { setCityDetail(false); setView(next); }} onNewTrip={() => setModal("trip")} />
@@ -458,7 +457,7 @@ function App() {
               onTicket={() => setModal("ticket")}
             />
           )}
-          {view === "map" && city && <MapView city={city} places={allPlaces} onOpenCity={openCity} />}
+          {view === "map" && city && <MapDesk key={city.id} cities={trip.cities} city={city} onSelect={setActiveCityId} onGuide={(url) => updateCity((current) => ({ ...current, appleGuideUrl: url }))} />}
           {view === "tickets" && <TicketsView onExport={() => void doExportHtml()} trip={trip} onAdd={() => setModal("ticket")} onEdit={(id) => { setEditingTicketId(id); setModal("editTicket"); }} onRemove={(id) => { const target = trip.tickets.find((item) => item.id === id); if (window.confirm(`删除票据“${target?.title || "未命名票据"}”？`)) updateTrip((current) => ({ ...current, tickets: current.tickets.filter((item) => item.id !== id) })); }} />}
           {view === "expenses" && <ExpensesView trip={trip} onAdd={() => setModal("expense")} onRemove={(id) => updateTrip((current) => ({ ...current, expenses: current.expenses.filter((item) => item.id !== id) }))} />}
           {view === "assistant" && <AssistantView trip={trip} draft={chatDraft} onDraft={setChatDraft} onSend={sendChat} busy={busy === "chat"} onOptimize={prepareOptimization} onExpense={() => setModal("expense")} />}
@@ -490,23 +489,6 @@ function App() {
 
 function SettingsIcon() {
   return <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M4 7h16M4 17h16" /><rect x="7" y="4" width="4" height="6" rx="2" fill="#e8c547" /><rect x="14" y="14" width="4" height="6" rx="2" fill="#f06349" /></svg>;
-}
-
-function TravelBgm() {
-  const audio = useRef<HTMLAudioElement>(null);
-  const [enabled, setEnabled] = useState(() => { try { return localStorage.getItem("bontrip-bgm") !== "off"; } catch { return true; } });
-  const [playing, setPlaying] = useState(false);
-  useEffect(() => {
-    const start = () => { if (enabled && audio.current) { audio.current.volume = .35; void audio.current.play().catch(() => setPlaying(false)); } };
-    const toggle = () => setEnabled((current) => !current);
-    window.addEventListener("pointerdown", start, { once: true });
-    window.addEventListener("bontrip-bgm-start", start);
-    window.addEventListener("bontrip-bgm-toggle", toggle);
-    try { localStorage.setItem("bontrip-bgm", enabled ? "on" : "off"); } catch { /* storage unavailable */ }
-    if (enabled) start(); else audio.current?.pause();
-    return () => { window.removeEventListener("pointerdown", start); window.removeEventListener("bontrip-bgm-start", start); window.removeEventListener("bontrip-bgm-toggle", toggle); };
-  }, [enabled]);
-  return <div className="travel-bgm export-hide"><audio ref={audio} src="./assets/paws-and-passport.mp3" loop preload="auto" onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} /><button aria-label={playing ? "关闭背景音乐" : "播放背景音乐"} aria-pressed={playing} onClick={() => { if (enabled && !playing) void audio.current?.play().catch(() => {}); else setEnabled(!enabled); }}><span>♪</span>{playing ? "音乐开" : "音乐关"}</button></div>;
 }
 
 function OpeningIntro({ onDone }: { onDone: () => void }) {
@@ -565,7 +547,7 @@ function OpeningIntro({ onDone }: { onDone: () => void }) {
 }
 
 function Sidebar({ view, onView, onNewTrip }: { view: ViewName; onView: (value: ViewName) => void; onNewTrip: () => void }) {
-  return <aside className="sidebar export-hide"><div className="brand"><span>旅</span><div><strong>旅卡排版室</strong><small>Travel Card Studio</small></div></div><button className="new-trip-button" onClick={onNewTrip}>＋ 新建旅行</button><nav>{navItems.map((item) => <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => onView(item.id)}><i>{item.image ? <img src={item.image} alt="" /> : item.id === "settings" ? <SettingsIcon /> : item.icon}</i>{item.label}</button>)}</nav><div className="sidebar-illustration"><img src="./assets/bontrip-travel.png" alt="旅行小猫" /><p>在路上，<br />收集风景，<br />也收集自己。</p></div></aside>;
+  return <aside className="sidebar export-hide"><div className="brand"><span>旅</span><div><strong>旅卡排版室</strong><small>Travel Card Studio</small></div></div><button className="new-trip-button" onClick={onNewTrip}>＋ 新建旅行</button><nav>{navItems.map((item) => <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => onView(item.id)}><i>{item.image ? <img src={item.image} alt="" /> : item.id === "settings" ? <SettingsIcon /> : item.icon}</i>{item.label}</button>)}</nav><CatCompanion /></aside>;
 }
 
 function MobileNav({ view, onView }: { view: ViewName; onView: (value: ViewName) => void }) {
@@ -574,7 +556,7 @@ function MobileNav({ view, onView }: { view: ViewName; onView: (value: ViewName)
 
 function Topbar({ trip, view, onSettings, onExportHtml, onExportPng, busy }: { trip: Trip; view: ViewName; onSettings: () => void; onExportHtml: () => void; onExportPng: () => void; busy: boolean }) {
   const title = navItems.find((item) => item.id === view)?.label || trip.title;
-  return <header className="topbar export-hide"><div><span className="eyebrow">{trip.startDate} — {trip.endDate}</span><h1>{view === "trip" ? trip.title : title}</h1></div><div className="top-actions"><button className="settings-shortcut" onClick={onSettings} aria-label="打开设置"><SettingsIcon /></button><button onClick={onExportHtml}>⇩ HTML</button><button onClick={onExportPng} disabled={busy}>{busy ? "整理中…" : "⇩ PNG"}</button></div></header>;
+  return <header className="topbar export-hide"><div><span className="eyebrow">{trip.startDate} — {trip.endDate}</span><h1>{view === "trip" ? trip.title : title}</h1></div><div className="top-actions"><button className="settings-shortcut" onClick={onSettings} aria-label="打开设置"><SettingsIcon /></button><button onClick={onExportHtml}>⇩ HTML</button><button onClick={onExportPng} disabled={busy}>{busy ? "整理中…" : "⇩ PNG"}</button><CatMusicControl compact /></div></header>;
 }
 
 function HomeView({ document, onOpenTrip, onCover, onNew }: { document: TravelDocument; onOpenTrip: (id: string) => void; onCover: (id: string, file: File) => void; onNew: () => void }) {
@@ -625,16 +607,6 @@ function CityJournal({ city, onAdd }: { city: City; onAdd: () => void }) {
 }
 
 function EmptyDay({ onAdd }: { onAdd: () => void }) { return <div className="empty-state"><span>⌖</span><h3>这座城市还留着一页空白</h3><p>先建第一天，再慢慢把地点和路线串起来。</p><button className="primary-button" onClick={onAdd}>＋ 新建第一天</button></div>; }
-
-function MapView({ city, places, onOpenCity }: { city: City; places: Place[]; onOpenCity: (id: string) => void }) {
-  const [search, setSearch] = useState("");
-  const scopedSearch = search.trim() || "景点";
-  return <section className="map-page">
-    <header className="page-intro"><span className="eyebrow">MAP DESK</span><h2>{city.name}地图导览</h2><p>所有搜索都会限定在 {city.englishName}{city.country ? ` · ${city.country}` : ""}，不会再按设备当前位置寻找。</p></header>
-    <section className="map-search-desk"><label><span>搜索目的地附近</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={`咖啡馆、酒店或景点 · ${city.name}`} /></label><div><a href={appleMapsUrl(scopedSearch, city)} target="_blank" rel="noreferrer"> Apple 地图搜索</a><a href={googleMapsUrl(scopedSearch, city)} target="_blank" rel="noreferrer">G Google 地图搜索</a></div></section>
-    <div className="map-layout"><section className="paper-map"><div className="map-lines">{places.map((place, index) => <div className="map-pin" key={place.id} style={{ left: `${18 + (index * 23) % 68}%`, top: `${18 + (index * 31) % 60}%` }}><span>{index + 1}</span><small>{place.name}</small></div>)}</div><div className="map-route-actions"><a href={appleRouteUrl(places, city)} target="_blank" rel="noreferrer">在 Apple 地图打开</a><a href={googleRouteUrl(places, city)} target="_blank" rel="noreferrer">在 Google 地图打开</a></div></section><aside className="map-place-list"><header><h3>{places.length} 个地点</h3></header>{places.map((place, index) => <article key={place.id}><span>{index + 1}</span><div><small>{place.category}</small><strong>{place.name}</strong><p>{place.time} · {place.duration}</p></div><div><a href={appleMapsUrl(place, city)} target="_blank" rel="noreferrer"></a><a href={googleMapsUrl(place, city)} target="_blank" rel="noreferrer">G</a></div></article>)}</aside></div><div className="city-switcher"><button onClick={() => onOpenCity(city.id)}>{city.name}</button></div>
-  </section>;
-}
 
 function ExpensesView({ trip, onAdd, onRemove }: { trip: Trip; onAdd: () => void; onRemove: (id: string) => void }) {
   const totals = useMemo(() => Object.entries(trip.expenses.reduce<Record<string, number>>((acc, item) => ({ ...acc, [item.currency]: (acc[item.currency] || 0) + item.amount }), {})), [trip.expenses]);

@@ -35,6 +35,7 @@ export interface JournalEntry {
 }
 
 export interface City {
+  appleGuideUrl?: string;
   dateMode?: "stay" | "days";
   id: string;
   name: string;

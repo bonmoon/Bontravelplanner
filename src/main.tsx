@@ -1,11 +1,12 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App";
+import { TravelMusicProvider } from "./TravelMusic";
 import "./styles.css";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <App />
+    <TravelMusicProvider><App /></TravelMusicProvider>
   </StrictMode>,
 );
 

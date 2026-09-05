@@ -928,3 +928,49 @@ a { color: inherit; }
 .magazine-library .library-trip-open p,.magazine-library .library-trip-open strong { color:inherit; }
 .magazine-library .trip-cover-upload { left:auto; }
 .placed-sticker span { min-width:72px; max-width:120px; font-size:10px; max-height:38px; text-align:left; }
+/* One continuous soundtrack; controls live with the travelling cat. */
+.cat-motion { position:relative; padding:10px 0; }
+.cat-motion img { display:block; width:100%; height:125px; object-fit:contain; transform-origin:50% 90%; animation:cat-breathe 4s ease-in-out infinite; }
+.cat-motion span,.cat-motion > i { position:absolute; top:20%; right:9%; color:#ffe267; font-style:normal; animation:cat-spark 3s ease-in-out infinite; }
+.cat-motion > i { top:55%; right:auto; left:8%; animation-delay:1s; }
+.cat-companion.is-playing .cat-motion img { animation:cat-dance 1.8s ease-in-out infinite; }
+.cat-companion > small { display:block; margin-top:8px; font-size:11px; }
+.cat-music-control { display:flex; align-items:center; justify-content:center; gap:9px; width:100%; margin-top:14px; padding:10px; border:2px solid #1a2744; border-radius:14px; background:#fffaf0; color:#1a2744; font-size:12px; }
+.cat-equalizer { display:flex; align-items:center; height:17px; gap:3px; }
+.cat-equalizer i { display:block; width:3px; height:5px; background:#ef654b; border-radius:2px; }
+.is-playing .cat-equalizer i { animation:cat-beat .85s ease-in-out infinite alternate; }
+.is-playing .cat-equalizer i:nth-child(2) { animation-delay:.3s; }
+.is-playing .cat-equalizer i:nth-child(3) { animation-delay:.6s; }
+.top-actions .cat-music-control.compact { display:none; }
+.top-actions button:nth-child(3):after { content:none; }
+.top-actions .cat-music-control:after { content:none!important; }
+@keyframes cat-breathe { 0%,100%{transform:translateY(0) rotate(-2deg)} 50%{transform:translateY(-5px) rotate(2deg) scale(1.025)} }
+@keyframes cat-dance { 0%,100%{transform:rotate(-4deg) translateY(0)} 50%{transform:rotate(4deg) translateY(-7px)} }
+@keyframes cat-spark { 0%,100%{opacity:.35;transform:scale(.75)} 50%{opacity:1;transform:scale(1.1)} }
+@keyframes cat-beat { to {height:16px} }
+.map-city-tabs { display:flex; gap:10px; overflow-x:auto; padding:4px 3px 18px; }
+.map-city-tabs button { display:flex; flex:none; align-items:center; gap:9px; min-height:48px; padding:6px 14px 6px 8px; border:2px solid var(--ink); border-radius:16px; background:var(--card); }
+.map-city-tabs button[aria-pressed=true] { background:var(--gold); box-shadow:3px 3px 0 var(--ink); }
+.map-city-tabs img { width:34px; height:34px; object-fit:cover; border-radius:10px; }
+.city-guide-panel { border:2px solid var(--ink); border-radius:24px; background:#fffaf0; padding:24px; margin:12px 0 24px; }
+.city-guide-panel h3 { margin:8px 0; font:700 24px Georgia,"Songti SC",serif; }
+.guide-actions { display:flex; flex-wrap:wrap; gap:10px; margin:18px 0; }
+.guide-actions button,.guide-actions a,.apple-guide-link button { border:1px solid var(--ink); border-radius:12px; padding:10px 14px; text-decoration:none; background:var(--gold); font-size:12px; }
+.apple-guide-link { border-top:1px solid var(--line); padding-top:14px; }
+.apple-guide-link summary { cursor:pointer; }
+.apple-guide-link p { max-width:650px; font-size:12px; line-height:1.8; }
+.apple-guide-link label { display:grid; gap:8px; }
+.apple-guide-link input { width:100%; padding:12px; border:1px solid var(--line); border-radius:10px; margin-bottom:12px; }
+.guide-place-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(250px,1fr)); gap:20px; }
+.guide-place-grid article { overflow:hidden; border:2px solid var(--ink); border-radius:22px; background:#fffaf0; }
+.guide-place-cover { display:block; width:100%; aspect-ratio:4/3; object-fit:cover; }
+.guide-place-grid article > div { padding:20px; }
+.guide-place-grid h3 { margin:8px 0; }
+.guide-place-grid p { line-height:1.8; font-size:13px; }
+.guide-place-grid a { display:block; margin-top:12px; color:#2768b0; font-size:12px; }
+@media(max-width:1180px) { .top-actions .cat-music-control.compact { display:flex; position:relative; width:42px; height:42px; padding:2px; margin:0; } .cat-music-control.compact img { width:36px; height:36px; object-fit:contain; animation:cat-breathe 4s ease-in-out infinite; } .cat-music-control.compact .cat-music-label { display:none; } .cat-music-control.compact .cat-equalizer { position:absolute; right:3px; bottom:3px; transform:scale(.65); } }
+@media(max-width:760px) { .top-actions button:nth-child(3):after { content:"PNG"; } .top-actions { gap:5px; } .topbar { gap:8px; } .guide-place-grid { grid-template-columns:1fr; } .city-guide-panel { padding:18px; } }
+@media(prefers-reduced-motion:reduce) { .cat-motion img,.cat-motion span,.cat-motion > i,.is-playing .cat-equalizer i,.cat-music-control.compact img { animation:none!important; } }
+.sidebar { overflow-y:auto; }
+.sidebar .cat-companion { flex-shrink:0; }
+@media(min-width:1181px) and (max-height:850px) { .cat-companion .cat-motion { padding:0; } .cat-companion .cat-motion img { height:70px; } .cat-companion p { font-size:11px; line-height:1.4; } .cat-companion .cat-music-control { margin-top:8px; padding:7px; } }

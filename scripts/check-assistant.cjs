@@ -94,6 +94,17 @@ async function run() {
   assert.deepEqual(restored, portable);
   URL.revokeObjectURL(link.href);
   console.log('PASS: stay dates, derived dates, full date ranges, safe record edits, all 30 chats and sticker backup round-trip');
+  const { cityGuidePlaces, cityGuideText, cityGuideHtml, validAppleGuideUrl } = load('cityGuides');
+  const guideCity = { ...city, englishName:'Vienna', country:'Austria', days:[{places:[{id:'a',name:'美景宫',category:'景点',summary:'<script>alert(1)</script>'},{id:'b',name:'美景宫',category:'景点'},{id:'c',name:'咖啡馆',category:'美食',mapUrl:'javascript:alert("maps.apple.com")'}]}] };
+  assert.equal(cityGuidePlaces(guideCity).length,2);
+  assert.match(cityGuideText(guideCity),/Vienna/);
+  assert.ok(!cityGuideHtml(guideCity).includes('<script>'));
+  assert.ok(!cityGuideHtml(guideCity).includes('href="javascript:'));
+  assert.equal(validAppleGuideUrl('https://maps.apple.com/?guide=abc'),'https://maps.apple.com/?guide=abc');
+  assert.throws(()=>validAppleGuideUrl('https://maps.apple.com.evil.test/'));
+  assert.throws(()=>validAppleGuideUrl('javascript:alert(1)'));
+  assert.equal(cityGuidePlaces({...city,days:[]}).length,0);
+  console.log('PASS: deduplicated city guides, destination-scoped Apple links, escaped offline HTML, safe guide URLs, empty city');
   console.log('PASS: empty/length/malformed/schema retries, bounded retry, auth errors, body timeout, dated guide, new trip, original preservation, QR byte-identical JSON export');
 }
 run().catch(error => { console.error(error); process.exitCode = 1; }).finally(() => { global.fetch = nativeFetch; });

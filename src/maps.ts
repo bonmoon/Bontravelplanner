@@ -21,12 +21,12 @@ function placeQuery(place: Place | string, city?: City): string {
 }
 
 export function appleMapsUrl(place: Place | string, city?: City): string {
-  if (typeof place !== "string" && place.mapUrl?.includes("maps.apple.com")) return place.mapUrl;
+  if (typeof place !== "string" && place.mapUrl) { try { const url = new URL(place.mapUrl); if (url.protocol === "https:" && ["maps.apple.com","maps.apple"].includes(url.hostname) && !url.username && !url.password) return url.href; } catch { /* fall back to a scoped search */ } }
   return `https://maps.apple.com/?q=${encodeURIComponent(placeQuery(place, city))}`;
 }
 
 export function googleMapsUrl(place: Place | string, city?: City): string {
-  if (typeof place !== "string" && place.mapUrl?.includes("google.com/maps")) return place.mapUrl;
+  if (typeof place !== "string" && place.mapUrl) { try { const url = new URL(place.mapUrl); if (url.protocol === "https:" && ["google.com","www.google.com","maps.google.com"].includes(url.hostname) && !url.username && !url.password) return url.href; } catch { /* fall back to a scoped search */ } }
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(placeQuery(place, city))}`;
 }
 
