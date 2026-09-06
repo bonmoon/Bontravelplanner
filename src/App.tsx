@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
-import { applyOptimizedDays, commandTrip, optimizeCity, parseExpenses, summarizePlace, testAssistantConnection, type OptimizedDay } from "./assistant";
+import { applyOptimizedDays, commandTrip, optimizeCity, summarizePlace, testAssistantConnection, type OptimizedDay } from "./assistant";
 import { CityCard, DaySection, Modal, PlaceRow, categoryIcon } from "./components";
 import { exportElementPng, exportJson, exportTripHtml } from "./exporters";
 import { downloadTripPackageTemplate, importTripPackage } from "./bulkPackage";
@@ -19,6 +19,10 @@ import { StickerProvider } from "./Stickers";
 import { applyRecordEdits } from "./assistantEdits";
 import { normalizeRoute, routeDraft } from "./routePlanning";
 import { RouteEditor } from "./RouteEditor";
+import { LedgerView } from "./LedgerView";
+import { ExpenseEditor } from "./ExpenseEditor";
+import { membersOf, calculateExpenseShares, money } from "./ledgerEngine";
+import { applyBusinessOperations, expenseFromOperation } from "./assistantBusiness";
 import { PlaceEditor } from "./PlaceEditor";
 
 const navItems: Array<{ id: ViewName; label: string; icon: string; image?: string }> = [
@@ -49,6 +53,20 @@ function sendOnEnter(event: KeyboardEvent<HTMLTextAreaElement>) {
   event.currentTarget.form?.requestSubmit();
 }
 
+function operationSummary(op:AssistantOperation,trip:Trip):string {
+  const records=[trip,...trip.cities,...trip.tickets,...trip.expenses,...trip.cities.flatMap(c=>[...c.days,...(c.journal||[]),...c.days.flatMap(d=>d.places)])];
+  const label=(id:string)=>{const record=records.find(r=>r.id===id);return record?("name" in record?record.name:"title" in record?record.title:id):id;};
+  if(op.type==="add_member")return `新增同行人：${op.name} ${op.avatar||"🙂"}`;
+  if(op.type==="delete_record")return `将删除：${label(op.id)}`;
+  const labels:Record<string,string>={title:"标题",text:"正文",date:"日期",name:"名称",startDate:"到达日期",endDate:"离开日期",summary:"看点",mapQuery:"地图搜索词",note:"备注",time:"开始时间",endTime:"结束时间",appleGuideUrl:"Apple 地图指南"};
+  if(op.type==="edit_record"||op.type==="update_place")return `${op.type==="edit_record"?label(op.id):op.placeName}\n${Object.entries(op.changes).map(([k,v])=>`${labels[k]||k}：${Array.isArray(v)?v.join("、"):v}`).join("\n")}`;
+  if(op.type==="add_ticket")return `${op.ticket.title}\n${op.ticket.date||""} · ${op.ticket.provider||""}\n${op.ticket.meta||""}`;
+  if(op.type==="add_city")return `${op.city.name} · ${op.city.startDate||op.city.dates||""}\n${op.city.note||""}\n${op.city.days?.map(d=>`${d.date}：${d.places.map(p=>p.name).join(" → ")}`).join("\n")||""}`;
+  if(op.type==="plan_day")return `${op.cityName||""} · ${op.date||""}\n${op.replace?"替换当天未锁定地点":"追加当天地点"}\n${op.places.map(p=>`${p.time||""} ${p.name} · ${p.summary||""}`).join("\n")}`;
+  if(op.type==="add_place")return `${op.cityName||""} · ${op.place.name}\n${op.place.summary||""}`;
+  return "打开对应功能，继续调整";
+}
+
 function App() {
   const [document, setDocument] = useState<TravelDocument>(sampleDocument);
   const [ready, setReady] = useState(false);
@@ -63,7 +81,10 @@ function App() {
   const [optimized, setOptimized] = useState<OptimizedDay[]>([]);
   const [optimizedCityId, setOptimizedCityId] = useState("");
   const [chatDraft, setChatDraft] = useState("");
-  const [expenseDraft, setExpenseDraft] = useState("");
+  const [expenseToEdit, setExpenseToEdit] = useState<Expense | undefined>();
+  const [pendingOps, setPendingOps] = useState<AssistantOperation[] | null>(null);
+  const [pendingTripId, setPendingTripId] = useState("");
+  const [pendingExpenseIndex, setPendingExpenseIndex] = useState<number | null>(null);
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [editingTicketId, setEditingTicketId] = useState("");
   const [editingPlace, setEditingPlace] = useState<{ cityId: string; placeId: string } | null>(null);
@@ -211,11 +232,11 @@ function App() {
 
 
   function applyAssistantOperations(operations: AssistantOperation[]) {
-    applyRecordEdits(trip, operations);
+    applyBusinessOperations(applyRecordEdits(trip, operations), operations, city?.id || "");
     const categories: PlaceCategory[] = ["景点", "美食", "交通", "住宿", "购物"];
     const ticketColors: Record<TicketKind, string> = { 火车票: "#efd5cf", 登机牌: "#d9e1ed", 酒店: "#efe2bd", 门票: "#dbe7d5", 预约: "#ead8e8", 通票: "#d8e5e1" };
     updateTrip((current) => {
-      let next = applyRecordEdits(current, operations);
+      let next = applyBusinessOperations(applyRecordEdits(current, operations), operations, city?.id || "");
       operations.forEach((operation) => {
         if (operation.type === "add_city") {
           const raw = operation.city;
@@ -234,7 +255,7 @@ function App() {
         if (operation.type === "update_place") {
           next = { ...next, cities: next.cities.map((targetCity) => {
             if (operation.cityName && !targetCity.name.includes(operation.cityName)) return targetCity;
-            return { ...targetCity, days: targetCity.days.map((day) => ({ ...day, places: day.places.map((place) => place.name === operation.placeName || place.name.includes(operation.placeName) ? { ...place, ...operation.changes, id: place.id } : place) })) };
+            return { ...targetCity, days: targetCity.days.map((day) => ({ ...day, places: day.places.map((place) => (operation.placeId ? place.id === operation.placeId : place.name === operation.placeName) ? { ...place, ...operation.changes, id: place.id } : place) })) };
           }) };
         }
         if (operation.type === "plan_day") {
@@ -259,14 +280,6 @@ function App() {
           const days = dayIndex >= 0 ? target.days.map((day, index) => index === dayIndex ? updatedDay : day) : [...target.days, updatedDay];
           days.sort((a, b) => (looseDateToIso(a.date, next.startDate) || "9999").localeCompare(looseDateToIso(b.date, next.startDate) || "9999"));
           next = { ...next, cities: next.cities.map((item) => item.id === target.id ? { ...item, days } : item) };
-        }
-        if (operation.type === "add_expense") {
-          const raw = operation.expense;
-          if (!Number.isFinite(Number(raw.amount)) || Number(raw.amount) <= 0) return;
-          next = { ...next, expenses: [{ id: uid("expense"), cityId: city?.id || next.cities[0]?.id || "", date: raw.date || new Date().toISOString().slice(0, 10), title: raw.title, amount: Number(raw.amount) || 0, currency: raw.currency || "¥", category: raw.category || "其他" }, ...next.expenses] };
-        }
-        if (operation.type === "update_expense") {
-          next = { ...next, expenses: next.expenses.map((expense) => expense.id === operation.expenseId ? { ...expense, ...operation.changes, id: expense.id, cityId: operation.changes.cityId || expense.cityId, amount: operation.changes.amount === undefined ? expense.amount : Math.max(0, Number(operation.changes.amount) || 0) } : expense) };
         }
         if (operation.type === "add_ticket") {
           const raw = operation.ticket; const kind = raw.kind || "预约";
@@ -312,30 +325,20 @@ function App() {
         showToast("新旅程已创建");
         return;
       }
-      applyAssistantOperations(result.operations);
-      updateTrip((current) => ({ ...current, chats: [...current.chats, { id: uid("chat"), role: "assistant", content: result.reply, createdAt: new Date().toISOString() }] }));
-      if (result.operations.length) showToast(`旅行助手完成了 ${result.operations.length} 项修改`);
+      if (result.operations.length && !result.operations.every(op => ["open_ticket","open_expense","optimize_route"].includes(op.type))) {
+        if(result.operations.some(op=>op.type==="add_member") && result.operations.some(op=>op.type==="add_expense"||op.type==="update_expense")) throw new Error("请先确认新增同行人，再整理分账");
+        applyBusinessOperations(applyRecordEdits(trip,result.operations),result.operations,city?.id||"");
+        setPendingOps(result.operations); setPendingTripId(trip.id); setAssistantOpen(false);
+        updateTrip(current=>({...current,chats:[...current.chats,{id:uid("chat"),role:"assistant",content:"已整理为待确认草稿，请核对后保存。",createdAt:new Date().toISOString()}]}));
+      } else {
+        applyAssistantOperations(result.operations);
+        updateTrip(current=>({...current,chats:[...current.chats,{id:uid("chat"),role:"assistant",content:result.reply,createdAt:new Date().toISOString()}]}));
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : "旅行助手没有完成这次操作";
       setChatDraft(content);
       updateTrip((current) => ({ ...current, chats: [...current.chats, { id: uid("chat"), role: "assistant", content: `没有写入：${message}`, createdAt: new Date().toISOString() }] }));
       showToast(message);
-    } finally {
-      setBusy("");
-    }
-  }
-
-  async function quickExpense() {
-    if (!expenseDraft.trim() || !trip || !city) return;
-    setBusy("expense");
-    try {
-      const entries = await parseExpenses(settings, expenseDraft, city.id);
-      updateTrip((current) => ({ ...current, expenses: [...entries, ...current.expenses] }));
-      setExpenseDraft("");
-      setModal("none");
-      showToast(`记下了 ${entries.length} 笔`);
-    } catch (error) {
-      showToast(error instanceof Error ? error.message : "稍后再试");
     } finally {
       setBusy("");
     }
@@ -456,7 +459,7 @@ function App() {
           )}
           {view === "map" && city && <MapDesk key={city.id} cities={trip.cities} city={city} onSelect={setActiveCityId} onGuide={(url) => updateCity((current) => ({ ...current, appleGuideUrl: url }))} />}
           {view === "tickets" && <TicketsView onExport={() => void doExportHtml()} trip={trip} onAdd={() => setModal("ticket")} onEdit={(id) => { setEditingTicketId(id); setModal("editTicket"); }} onRemove={(id) => { const target = trip.tickets.find((item) => item.id === id); if (window.confirm(`删除票据“${target?.title || "未命名票据"}”？`)) updateTrip((current) => ({ ...current, tickets: current.tickets.filter((item) => item.id !== id) })); }} />}
-          {view === "expenses" && <ExpensesView trip={trip} onAdd={() => setModal("expense")} onRemove={(id) => updateTrip((current) => ({ ...current, expenses: current.expenses.filter((item) => item.id !== id) }))} />}
+          {view === "expenses" && <LedgerView trip={trip} onAdd={() => { setExpenseToEdit(undefined); setModal("expense"); }} onEdit={expense=>{setExpenseToEdit(expense);setModal("expense");}} onChange={next=>updateTrip(()=>next)} />}
           {view === "assistant" && <AssistantView trip={trip} draft={chatDraft} onDraft={setChatDraft} onSend={sendChat} busy={busy === "chat"} onOptimize={prepareOptimization} onExpense={() => setModal("expense")} />}
           {view === "settings" && <SettingsView settings={settings} onSettings={setSettings} onSave={saveSettings} onBackup={() => exportJson(document, trip.title)} onImport={() => importRef.current?.click()} onBulkImport={() => bulkImportRef.current?.click()} onDownloadTemplate={downloadTripPackageTemplate} onPersist={async () => showToast(await requestPersistentStorage() ? "这台设备会尽量长久保留旅行资料" : "浏览器会继续自动保存旅行资料")} />}
         </div>
@@ -475,8 +478,19 @@ function App() {
       {placeToEdit && editingPlace && <PlaceEditor key={placeToEdit.id} place={placeToEdit} onClose={() => setEditingPlace(null)} onSave={(edited) => { updateTrip((current) => ({ ...current, cities: current.cities.map((item) => item.id === editingPlace.cityId ? { ...item, days: item.days.map((day) => ({ ...day, places: day.places.map((place) => place.id === edited.id ? edited : place).sort((a,b) => (a.time || "99:99").localeCompare(b.time || "99:99")) })) } : item) })); setEditingPlace(null); showToast("地点已更新"); }} />}
       {modal === "ticket" && <TicketEditor settings={settings} cityId={city?.id || trip.cities[0]?.id || ""} onClose={() => setModal("none")} onCreate={(created) => { updateTrip((current) => ({ ...current, tickets: [created, ...current.tickets] })); setModal("none"); showToast("票据已经收好了"); }} />}
       {modal === "editTicket" && <TicketEditor settings={settings} initial={trip.tickets.find((item) => item.id === editingTicketId)} cityId={city?.id || trip.cities[0]?.id || ""} onClose={() => setModal("none")} onCreate={(edited) => { updateTrip((current) => ({ ...current, tickets: current.tickets.map((item) => item.id === editingTicketId ? { ...edited, id: item.id } : item) })); setModal("none"); showToast("票据已经更新"); }} />}
-      {modal === "expense" && city && <ExpenseModal draft={expenseDraft} onDraft={setExpenseDraft} busy={busy === "expense"} onQuick={quickExpense} onClose={() => setModal("none")} onManual={(created) => { updateTrip((current) => ({ ...current, expenses: [created, ...current.expenses] })); setModal("none"); showToast("这一笔已经记下"); }} cityId={city.id} />}
+      {modal === "expense" && <ExpenseEditor key={expenseToEdit?.id || "new"} trip={trip} cityId={city?.id || ""} initial={expenseToEdit} onClose={()=>{setModal("none");setExpenseToEdit(undefined);setPendingExpenseIndex(null);}} onAssistant={text=>{setModal("none");setChatDraft(text);setAssistantOpen(true);}} onSave={created=>{
+        if(pendingExpenseIndex!==null && pendingOps) {
+          const index=pendingExpenseIndex;
+          setPendingOps(pendingOps.map((op,i)=>i!==index?op:op.type==="update_expense"?{type:"update_expense",expenseId:op.expenseId,changes:created}:{type:"add_expense",expense:created}));
+          setPendingExpenseIndex(null);
+        } else updateTrip(current=>({...current,members:membersOf(current),expenses:current.expenses.some(e=>e.id===created.id)?current.expenses.map(e=>e.id===created.id?created:e):[created,...current.expenses]}));
+        setModal("none");setExpenseToEdit(undefined);showToast(pendingExpenseIndex!==null?"分账草稿已更新，请确认全部修改":"账单已确认，余额已重新计算");
+      }} />}
       {modal === "route" && city && <RouteEditor city={trip.cities.find(item => item.id === optimizedCityId) || city} optimized={optimized} onChange={setOptimized} onClose={() => setModal("none")} onAccept={acceptOptimization} onRefine={async message => { const target = trip.cities.find(item => item.id === optimizedCityId) || city; return optimizeCity(settings, trip, { ...target, days: target.days.filter(day => optimized.some(item => item.dayId === day.id)) }, message, optimized); }} />}
+      {pendingOps && modal !== "expense" && <Modal title="确认旅行助手的修改" eyebrow="REVIEW" onClose={()=>setPendingOps(null)} wide><p>确认后才会保存。删除操作会移除对应资料，请仔细核对。</p>{pendingOps.map((op,index)=>{
+        const expense=expenseFromOperation(trip,op,city?.id||"");
+        return <section className="assistant-change" key={index}>{expense?<><h3>{expense.title} · {money(expense.amount,expense.currency)}</h3><p>{membersOf(trip).find(m=>m.id===expense.paidBy)?.name} 付款</p>{calculateExpenseShares(expense,membersOf(trip)).map(p=><p key={p.memberId}>{membersOf(trip).find(m=>m.id===p.memberId)?.name} · {money(p.amount,expense.currency)}</p>)}<button onClick={()=>{setExpenseToEdit(expense);setPendingExpenseIndex(index);setModal("expense");}}>修改这笔分账</button></>:op.type==="add_journal"?<><h3>Journal · {op.journal.title}</h3><small>{trip.cities.find(c=>c.id===op.cityId)?.name} · {op.journal.date}</small><p>{op.journal.text}</p></>:<><h3>{op.type==="delete_record"?"删除记录":op.type==="add_member"?"添加同行人":"旅行资料修改"}</h3><p>{operationSummary(op,trip)}</p></>}</section>;
+      })}<footer className="modal-footer"><button onClick={()=>setPendingOps(null)}>取消</button><button className="primary-button" onClick={()=>{try{if(trip.id!==pendingTripId)throw new Error("旅行已切换，请重新整理");applyAssistantOperations(pendingOps);updateTrip(current=>({...current,chats:[...current.chats,{id:uid("chat"),role:"assistant",content:"已确认并保存这次修改。",createdAt:new Date().toISOString()}]}));setPendingOps(null);showToast("修改已保存");}catch(e){showToast((e as Error).message);}}}>确认保存</button></footer></Modal>}
       <FloatingAssistant open={assistantOpen} onOpen={() => setAssistantOpen(true)} onClose={() => setAssistantOpen(false)} trip={trip} draft={chatDraft} onDraft={setChatDraft} onSend={sendChat} busy={busy === "chat"} onTicket={() => setModal("ticket")} onExpense={() => setModal("expense")} />
       <div className={`toast ${toast ? "show" : ""}`}>{toast}</div>
     </div></StickerProvider>
@@ -606,11 +620,6 @@ function CityJournal({ city, onAdd }: { city: City; onAdd: () => void }) {
 
 function EmptyDay({ onAdd }: { onAdd: () => void }) { return <div className="empty-state"><span>⌖</span><h3>这座城市还留着一页空白</h3><p>先建第一天，再慢慢把地点和路线串起来。</p><button className="primary-button" onClick={onAdd}>＋ 新建第一天</button></div>; }
 
-function ExpensesView({ trip, onAdd, onRemove }: { trip: Trip; onAdd: () => void; onRemove: (id: string) => void }) {
-  const totals = useMemo(() => Object.entries(trip.expenses.reduce<Record<string, number>>((acc, item) => ({ ...acc, [item.currency]: (acc[item.currency] || 0) + item.amount }), {})), [trip.expenses]);
-  return <section className="expenses-page"><header className="page-intro row"><div><span className="eyebrow">TRAVEL LEDGER</span><h2>随手记下，回来再算</h2><p>每一笔都可以关联城市、日期和用途。</p></div><button className="primary-button" onClick={onAdd}>＋ 记一笔</button></header><div className="expense-layout"><section className="expense-summary"><small>旅行支出</small><div>{totals.map(([currency, amount]) => <strong key={currency}>{currency} {amount.toFixed(2)}</strong>)}</div><p>{trip.expenses.length} 笔 · {new Set(trip.expenses.map((item) => item.cityId)).size} 个城市</p></section><section className="expense-list">{trip.expenses.map((expense) => <article key={expense.id}><span>{expense.category === "交通" ? "↗" : expense.category === "餐饮" ? "◌" : expense.category === "门票" ? "▱" : "◇"}</span><div><strong>{expense.title}</strong><small>{trip.cities.find((city) => city.id === expense.cityId)?.name} · {expense.date}</small></div><b>{expense.currency} {expense.amount.toFixed(2)}</b><button onClick={() => onRemove(expense.id)}>×</button></article>)}</section></div></section>;
-}
-
 function AssistantView({ trip, draft, onDraft, onSend, busy, onOptimize, onExpense }: { trip: Trip; draft: string; onDraft: (value: string) => void; onSend: (event: FormEvent) => void; busy: boolean; onOptimize: () => void; onExpense: () => void }) {
   return <section className="assistant-page"><header className="assistant-header"><div className="assistant-avatar"><img src="./assets/travel-assistant-avatar.png" alt="" /></div><div><span className="eyebrow">TRIP COMPANION</span><h2>{trip.title}的旅行助手</h2><p>可以从一个模糊念头开始，我们慢慢把它排成路。</p></div></header><div className="assistant-layout"><section className="chat-card"><div className="chat-messages">{trip.chats.map((message) => <article key={message.id} className={message.role}><span>{message.role === "assistant" ? "旅" : "我"}</span><p>{message.content}</p></article>)}{busy && <article className="assistant"><span>旅</span><p>我在翻一翻你的旅行…</p></article>}</div><form onSubmit={onSend}><textarea value={draft} disabled={busy} onChange={(event) => onDraft(event.target.value)} onKeyDown={sendOnEnter} placeholder="想把哪一天排得更松一点？" /><button disabled={busy || !draft.trim()}>➤</button></form></section><aside className="assistant-tools"><button onClick={onOptimize}><span>⌘</span><strong>重新排顺路线</strong><small>保留固定地点</small></button><button onClick={onExpense}><span>▦</span><strong>随手记一笔</strong><small>一句话就够</small></button></aside></div></section>;
 }
@@ -680,11 +689,6 @@ function JournalModal({ city, onClose, onCreate }: { city: City; onClose: () => 
   const defaultDate = city.days.at(-1)?.date.match(/^\d{4}-\d{2}-\d{2}$/) ? city.days.at(-1)!.date : city.startDate || "";
   function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const data = new FormData(event.currentTarget); onCreate({ id: uid("journal"), date: String(data.get("date") || defaultDate || "旅途中"), title: String(data.get("title") || `${city.name}的一天`), text: String(data.get("text") || ""), images }); }
   return <Modal title={`写一页 ${city.name} Journal`} eyebrow="CITY JOURNAL" onClose={onClose} wide><form className="modal-form journal-form" onSubmit={submit}><MultiImagePicker values={images} label="标志性照片" onChange={setImages} /><div className="form-row"><label><span>日期</span><input name="date" type="date" defaultValue={defaultDate} /></label><label><span>这一页的标题</span><input name="title" required placeholder="雨后的老城与一杯咖啡" /></label></div><label><span>今天想留下什么？</span><textarea name="text" required placeholder="写下走过的街道、意外遇见的人，或者这一刻最想记住的气味。" /></label><footer><button type="button" onClick={onClose}>取消</button><button className="primary-button">收进城市 Journal</button></footer></form></Modal>;
-}
-
-function ExpenseModal({ cityId, draft, onDraft, busy, onQuick, onClose, onManual }: { cityId: string; draft: string; onDraft: (value: string) => void; busy: boolean; onQuick: () => void; onClose: () => void; onManual: (expense: Expense) => void }) {
-  function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const data = new FormData(event.currentTarget); onManual({ id: uid("expense"), cityId, date: String(data.get("date") || new Date().toISOString().slice(0, 10)), title: String(data.get("title")), amount: Number(data.get("amount")), currency: String(data.get("currency") || "¥"), category: String(data.get("category") || "其他") as Expense["category"] }); }
-  return <Modal title="随手记一笔" eyebrow="QUICK LEDGER" onClose={onClose}><div className="expense-quick"><textarea value={draft} onChange={(event) => onDraft(event.target.value)} placeholder="刚才晚餐 38.5 欧，另外买了 10 欧交通卡" /><button className="primary-button" onClick={onQuick} disabled={busy || !draft.trim()}>{busy ? "正在整理…" : "✦ 帮我记下"}</button></div><div className="or-line"><span>或者自己填写</span></div><form className="modal-form compact" onSubmit={submit}><label><span>花在什么地方</span><input name="title" required placeholder="晚餐" /></label><div className="form-row three"><label><span>金额</span><input name="amount" type="number" step="0.01" required /></label><label><span>币种</span><input name="currency" defaultValue="€" /></label><label><span>分类</span><select name="category">{["交通", "餐饮", "住宿", "门票", "购物", "其他"].map((item) => <option key={item}>{item}</option>)}</select></label></div><label><span>日期</span><input name="date" type="date" defaultValue={new Date().toISOString().slice(0, 10)} /></label><footer><button type="button" onClick={onClose}>取消</button><button className="primary-button">记下</button></footer></form></Modal>;
 }
 
 export default App;

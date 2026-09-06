@@ -89,7 +89,18 @@ export interface Ticket {
   checkOutTime?: string;
 }
 
+export interface TripMember { id: string; name: string; avatar: string; isMe: boolean }
+export type SplitType = "equal" | "exact" | "percentage" | "shares" | "personal";
+export interface ExpenseParticipant { memberId: string; amount?: number; percentage?: number; shares?: number }
+export interface Settlement { id: string; fromMemberId: string; toMemberId: string; amount: number; currency: string; date: string; note: string }
 export interface Expense {
+  paidBy?: string;
+  splitType?: SplitType;
+  participants?: ExpenseParticipant[];
+  note?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  transactionType?: "expense" | "refund";
   id: string;
   cityId: string;
   date: string;
@@ -116,6 +127,8 @@ export interface ChatMessage {
 }
 
 export interface Trip {
+  members?: TripMember[];
+  settlements?: Settlement[];
   id: string;
   title: string;
   startDate: string;
@@ -160,6 +173,10 @@ export interface MusicLibraryItem {
 }
 
 export type AssistantOperation =
+  | { type: "add_journal"; cityId: string; journal: Pick<JournalEntry, "title" | "text" | "date"> }
+  | { type: "add_member"; name: string; avatar?: string }
+  | { type: "delete_record"; entity: "expense" | "ticket" | "journal" | "place" | "day" | "city"; id: string }
+
   | { type: "edit_record"; entity: "trip" | "city" | "day" | "ticket" | "journal"; id: string; changes: Record<string, string | boolean> }
   | { type: "create_trip"; trip: Partial<Trip> & Pick<Trip, "title"> }
   | { type: "open_ticket" }
@@ -167,7 +184,7 @@ export type AssistantOperation =
   | { type: "optimize_route"; date?: string; cityName?: string }
   | { type: "add_city"; city: Partial<City> & Pick<City, "name"> }
   | { type: "add_place"; cityName?: string; dayTitle?: string; place: Partial<Place> & Pick<Place, "name"> }
-  | { type: "update_place"; cityName?: string; placeName: string; changes: Partial<Place> }
+  | { type: "update_place"; placeId?: string; cityName?: string; placeName: string; changes: Partial<Place> }
   | { type: "plan_day"; cityName?: string; date?: string; title?: string; replace?: boolean; places: Array<Partial<Place> & Pick<Place, "name">> }
   | { type: "add_expense"; expense: Partial<Expense> & Pick<Expense, "title" | "amount"> }
   | { type: "update_expense"; expenseId: string; changes: Partial<Omit<Expense, "id">> }

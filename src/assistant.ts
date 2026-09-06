@@ -1,5 +1,6 @@
 import type { AssistantCommandResult, AssistantOperation, AssistantSettings, City, DayPlan, Expense, Place, Trip, Ticket } from "./types";
 import { uid } from "./types";
+import { calculateMemberBalances, calculateSettlements, membersOf } from "./ledgerEngine";
 import { normalizeRoute, type OptimizedDay } from "./routePlanning";
 import { AssistantFormatError, parseAssistantJson, readAssistantContent } from "./assistantResponse";
 export type { OptimizedDay } from "./routePlanning";
@@ -191,7 +192,7 @@ export async function parseExpenses(settings: AssistantSettings, text: string, c
     [
       {
         role: "system",
-        content: `${baseSystem}\n从口语中提取一笔或多笔账目。只输出 JSON：{"expenses":[{"title":"项目","amount":12.5,"currency":"€","category":"交通|餐饮|住宿|门票|购物|其他","date":"YYYY-MM-DD"}]}`,
+        content: `${baseSystem}\n从口语中提取一笔或多笔账目。只输出 JSON：{"expenses":[{"title":"项目","amount":12.5,"currency":"EUR","paidBy":"准确成员ID","splitType":"equal","participants":[{"memberId":"准确成员ID"}],"category":"交通|餐饮|住宿|门票|购物|其他","date":"YYYY-MM-DD"}]}`,
       },
       { role: "user", content: `今天是 ${today}。记录：${text}\n请整理成 json。` },
     ],
@@ -214,26 +215,41 @@ export async function parseExpenses(settings: AssistantSettings, text: string, c
 }
 
 export async function commandTrip(settings: AssistantSettings, trip: Trip, message: string, activeCity?: string): Promise<AssistantCommandResult> {
+  if (/(欠.{0,12}(多少|多少钱)|谁付.{0,8}(多|最多)|一共花|总支出|总共花|未结算|没结算|算一下.*结算)/.test(message) && !/(新增|添加|改成|改为|删除|记一笔)/.test(message)) {
+    const members=membersOf(trip), ledgers=calculateMemberBalances(trip), debts=calculateSettlements(trip);
+    const name=(id:string)=>members.find(m=>m.id===id)?.name||id;
+    return { operations:[], reply:ledgers.length ? ledgers.map(b=>`${b.currency} · 旅行净支出 ${b.total.toFixed(2)}\n${members.map(m=>`${m.name} 已付 ${b.paid[m.id].toFixed(2)}，应承担 ${b.shares[m.id].toFixed(2)}`).join("\n")}\n净额结算：${debts.filter(d=>d.currency===b.currency).map(d=>`${name(d.fromMemberId)} → ${name(d.toMemberId)} ${d.currency} ${d.amount.toFixed(2)}`).join("；")||"已结清"}`).join("\n\n") : "还没有账单，可先添加一笔旅行支出。" };
+  }
   if (/xiaohongshu\.com|xhslink\.com/.test(message) && message.replace(/https?:\/\/\S+/g, "").trim().length < 70) return { reply: "请粘贴小红书攻略正文，并在开头写城市和日期，例如：维也纳，2026-09-17。收到正文后我会整理地点、看点和建议时间，配图可以之后再加。", operations: [] };
-  const itinerary = trip.cities.map((city) => ({ id: city.id, city: city.name, startDate: city.startDate, endDate: city.endDate, dates: city.dates, note: city.note, journal: city.journal?.map(({id,title,date,text}) => ({id,title,date,text})), days: city.days.map((day) => ({ id: day.id, date: day.date, title: day.title, places: day.places.map((place) => ({ name: place.name, category: place.category, time: place.time, duration: place.duration, locked: !!place.locked })) })) }));
-  const ledger = trip.expenses.map((item) => ({ id: item.id, title: item.title, amount: item.amount, currency: item.currency, date: item.date, category: item.category, city: trip.cities.find((city) => city.id === item.cityId)?.name || "" }));
+  const itinerary = trip.cities.map((city) => ({ id: city.id, city: city.name, startDate: city.startDate, endDate: city.endDate, dates: city.dates, appleGuideUrl:city.appleGuideUrl, note: city.note, journal: city.journal?.map(({id,title,date,text}) => ({id,title,date,text})), days: city.days.map((day) => ({ id: day.id, date: day.date, title: day.title, places: day.places.map((place) => ({ id: place.id, name: place.name, mapQuery:place.mapQuery, summary:place.summary, highlights:place.highlights, category: place.category, time: place.time, endTime:place.endTime, duration: place.duration, locked: !!place.locked })) })) }));
+  const ledger = trip.expenses.map((item) => ({ id: item.id, title: item.title, amount: item.amount, currency: item.currency, date: item.date, category: item.category, paidBy:item.paidBy, splitType:item.splitType, participants:item.participants, note:item.note, transactionType:item.transactionType, city: trip.cities.find((city) => city.id === item.cityId)?.name || "" }));
   const tripYear = trip.startDate.match(/20\d{2}/)?.[0] || trip.endDate.match(/20\d{2}/)?.[0] || String(new Date().getFullYear());
   const today = new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Shanghai" }).format(new Date());
   const recentConversation = trip.chats.slice(-12).map((item) => ({ role: item.role, content: item.content }));
   const messages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
     { role: "system", content: `${baseSystem}
 你同时是可以写入旅行资料的操作助手。只输出 JSON：{"reply":"简短确认","operations":[]}。
+可读写范围：当前旅行全部业务模块（旅行、城市、日期、景点、美食、地图检索词和指南链接、票据文字、Journal、账目和成员）。不能读取API密钥、不能虚构图片/PDF中的内容。用户只要求总结或查询时不要创建行程；明确要求写进Journal时使用add_journal或edit_record。所有写入均需界面确认，reply应说“已整理为待确认草稿”，不得在用户确认前声称已保存。
+新增操作：
+{"type":"add_journal","cityId":"上下文准确城市ID","journal":{"date":"YYYY-MM-DD","title":"标题","text":"用户要求总结的完整正文"}}。用户要求summarize写journal必须实际输出该操作。已有journal使用edit_record保留图片，只改text/title/date。
+{"type":"add_member","name":"Ben","avatar":"🙂"}；新增成员与分账建议分开两次确认，不能编造memberId。
+{"type":"delete_record","entity":"expense|ticket|journal|place|day|city","id":"准确原ID"}，只有用户明确要求删除才生成，界面确认后执行。
+新增和修改账目的paidBy及participants.memberId引用下列成员ID；不能猜付款人，不清楚先询问。splitType=equal|exact|percentage|shares|personal。participants数组每项包含memberId；exact提供amount，percentage提供percentage，shares提供shares。personal仅一位承担人。AI只提取结构草稿，不计算分摊或结算金额。
+本地账务引擎的结果才是余额和结算的依据，不自行推算债务。以下计算结果按币种独立，含已结算抵扣：
+成员：${JSON.stringify(membersOf(trip).map(({id,name,isMe})=>({id,name,isMe})))}
+余额：${JSON.stringify(calculateMemberBalances(trip))}
+结算建议：${JSON.stringify(calculateSettlements(trip))}
 可用操作：
 {"type":"edit_record","entity":"trip|city|day|ticket|journal","id":"上下文中已有记录的准确ID","changes":{"字段":"新值"}}。
-仅修改用户指定字段；不能修改ID、图片、附件、二维码或数组。trip可改title/subtitle/startDate/endDate；city可改name/englishName/country/note/startDate/endDate；day可改date/title；ticket可改title/provider/date/time/meta/code/passengers/departureTime/arrivalTime/arrivalDate/checkInDate/checkOutDate/checkInTime/checkOutTime/includesBreakfast（布尔值）；journal可改title/date/text。修改已有内容用edit_record，不得重复新增。无法确定记录时先询问。到达和离开日期必须分别写入城市startDate/endDate，不要因为只安排了某一天的景点而缩短停留范围。
-当前旅行ID：${trip.id}；现有票据：${JSON.stringify(trip.tickets.map(({id,title,provider,date,time,checkInDate,checkOutDate}) => ({id,title,provider,date,time,checkInDate,checkOutDate})))}。
+仅修改用户指定字段；不能修改ID、图片、附件、二维码或数组。trip可改title/subtitle/startDate/endDate；city可改name/englishName/country/note/startDate/endDate；day可改date/title；city还可改appleGuideUrl；ticket可改title/provider/date/time/meta/code/passengers/departureTime/arrivalTime/arrivalDate/checkInDate/checkOutDate/checkInTime/checkOutTime/includesBreakfast（布尔值）；journal可改title/date/text。修改已有内容用edit_record，不得重复新增。无法确定记录时先询问。到达和离开日期必须分别写入城市startDate/endDate，不要因为只安排了某一天的景点而缩短停留范围。
+当前旅行ID：${trip.id}；现有票据：${JSON.stringify(trip.tickets.map(ticket => Object.fromEntries(Object.entries(ticket).filter(([key,value]) => !["image","attachment","backgroundImage","qrCode","qrCode2"].includes(key) && ["string","boolean","number"].includes(typeof value)))))}。
 
 {"type":"create_trip","trip":{"title":"新旅行标题","startDate":"YYYY-MM-DD","endDate":"YYYY-MM-DD","cities":[{"name":"城市","englishName":"英文名","days":[{"date":"YYYY-MM-DD","title":"当天主题","places":[{"name":"地点","category":"景点","time":"09:00","endTime":"10:00","duration":"1小时","summary":"看点","highlights":[]}]}]}]}}；
 只有用户明确要求创建新旅行或新旅程时使用 create_trip，且整次回复只返回这一项操作，新行程全部放在 trip.cities 中。普通添加一天、粘贴攻略时按用户指定城市日期使用 plan_day。不能用 add_city 假装已经创建一趟新旅行。
 {"type":"open_ticket"}、{"type":"open_expense"}、{"type":"optimize_route","date":"可选的YYYY-MM-DD","cityName":"目标城市"}；
 {"type":"add_city","city":{"name":"城市","englishName":"英文","startDate":"YYYY-MM-DD","endDate":"YYYY-MM-DD","dates":"日期","note":"小记","days":[{"date":"日期","title":"主题","places":[{"name":"中文名","mapQuery":"官方英文或当地名称, City, Country","category":"景点|美食|交通|住宿|购物","time":"10:00","duration":"1小时","summary":"看点"}]}]}}；
 {"type":"add_place","cityName":"已有城市","dayTitle":"已有日期主题","place":{"name":"中文名","mapQuery":"官方英文或当地名称, City, Country","category":"景点|美食|交通|住宿|购物","time":"时间","duration":"时长","summary":"看点"}}；
-{"type":"update_place","cityName":"已有城市","placeName":"已有地点的准确名称","changes":{"mapQuery":"官方英文或当地名称, City, Country","summary":"可选的新说明"}}；
+{"type":"update_place","placeId":"上下文地点准确ID","cityName":"已有城市","placeName":"已有地点的准确名称","changes":{"mapQuery":"官方英文或当地名称, City, Country","summary":"可选的新说明"}}；
 {"type":"plan_day","cityName":"已有城市","date":"已有日期","title":"当天路线主题","replace":true,"places":[{"name":"中文名","mapQuery":"官方英文或当地名称, City, Country","category":"景点|美食|交通|住宿|购物","time":"09:00","endTime":"10:30","duration":"1.5小时","summary":"40-70字看点","highlights":["看点1","看点2"]}]}；
 {"type":"add_expense","expense":{"title":"项目","amount":12.5,"currency":"€","category":"交通|餐饮|住宿|门票|购物|其他","date":"YYYY-MM-DD"}}；
 {"type":"update_expense","expenseId":"现有账目ID","changes":{"amount":8,"date":"YYYY-MM-DD","title":"可选的新标题"}}；
@@ -249,7 +265,7 @@ export async function commandTrip(settings: AssistantSettings, trip: Trip, messa
   ];
   let content = await ask(settings, messages, true, "operations");
   let result = jsonFromText(content);
-  const wantsFullPlan = !/(?:攻略|小红书|粘贴|以下|一个|一处|单个)/.test(message) && /(?:一日游|半日游|一天|全天|完整.{0,4}行程|规划.{0,6}(?:行程|路线)|(?:其他|主流|主要).{0,8}(?:景点|地点))/.test(message);
+  const wantsFullPlan = !/(?:journal|日记|手记|summarize|总结)/i.test(message) && !/(?:攻略|小红书|粘贴|以下|一个|一处|单个)/.test(message) && /(?:一日游|半日游|一天|全天|完整.{0,4}行程|规划.{0,6}(?:行程|路线)|(?:其他|主流|主要).{0,8}(?:景点|地点))/.test(message);
   const plannedCount = () => Array.isArray(result.operations) ? result.operations.reduce((total, raw) => {
     const operation = raw as JsonObject;
     if (operation.type === "plan_day" && Array.isArray(operation.places)) return total + operation.places.length;
