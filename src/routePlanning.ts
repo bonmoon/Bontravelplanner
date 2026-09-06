@@ -18,7 +18,7 @@ function duration(place: Place): number {
 }
 
 // Keep locked stops in their original slots. Travel buffers are suggestions, not live directions.
-export function normalizeRoute(city: City, rawDays: unknown): OptimizedDay[] {
+export function normalizeRoute(city: City, rawDays: unknown, preview = false): OptimizedDay[] {
   if (!Array.isArray(rawDays)) throw new Error("模型没有返回路线列表，请重试；原行程未更改");
   let recognized = 0;
   const output = city.days.map((day) => {
@@ -37,21 +37,32 @@ export function normalizeRoute(city: City, rawDays: unknown): OptimizedDay[] {
     const ordered = day.places.map((place) => place.locked ? place : movable.shift()!);
     const times: OptimizedDay["times"] = {};
     let cursor = 0;
-    let conflict = false;
+    const conflicts: string[] = [];
+    let previousEnd = 0;
     for (const place of ordered) {
       const fixed = place.locked ? minutes(place.time) : undefined;
-      if (fixed !== undefined && cursor > fixed) conflict = true;
+      if (fixed !== undefined && previousEnd > fixed) conflicts.push(`${place.name} 的固定时间与上一站重叠`);
       const suggested = raw?.times?.[place.id];
-      if (suggested && (!/^([01]\d|2[0-3]):[0-5]\d$/.test(suggested.time || "") || !/^([01]\d|2[0-3]):[0-5]\d$/.test(suggested.endTime || ""))) throw new Error(`${place.name} 请填写完整有效的起止时间`);
+      if (!preview && suggested && (!/^([01]\d|2[0-3]):[0-5]\d$/.test(suggested.time || "") || !/^([01]\d|2[0-3]):[0-5]\d$/.test(suggested.endTime || ""))) throw new Error(`${place.name} 请填写完整有效的起止时间`);
       const start = fixed ?? minutes(suggested?.time) ?? (cursor || minutes(day.places[0]?.time) || 9 * 60);
       const end = place.locked ? start + duration(place) : minutes(suggested?.endTime) ?? start + duration(place);
-      if (start < cursor || end <= start || end > 21 * 60 || (/晚餐|晚饭|dinner/i.test(place.name) && start > 20 * 60)) conflict = true;
+      if (start < previousEnd) conflicts.push(`${place.name} 与上一站时间重叠`);
+      if (end <= start) conflicts.push(`${place.name} 的结束时间须晚于开始时间`);
+      if (end > 21 * 60) conflicts.push(`${place.name} 结束于 ${clock(end)}，请调整到 21:00 前`);
+      if (/晚餐|晚饭|dinner/i.test(place.name) && start > 20 * 60) conflicts.push(`${place.name} 请安排在 20:00 前开始`);
+      previousEnd = end;
       if (!place.locked) times[place.id] = { time: clock(start), endTime: clock(end) };
       cursor = end + 20;
     }
-    if (conflict) throw new Error(`${day.date} 的时间存在冲突（晚餐须在 20:00 前开始、行程 21:00 前结束），请减少地点、缩短停留或调整锁定时间；原行程未更改`);
+    if (conflicts.length && !preview) throw new Error(`${day.date} 时间冲突：${conflicts.join("；")}`);
     return { dayId: day.id, title: typeof raw?.title === "string" ? raw.title : day.title, placeIds: ordered.map((place) => place.id), times, note: `${raw?.note || "保留当天地点"}${missing.length && raw ? "；已补回遗漏地点" : ""}。时间为建议安排，站间预留 20 分钟，请按实际交通核对。` };
   });
   if (city.days.some((day) => day.places.length) && !recognized) throw new Error("模型返回的地点与当前城市不匹配，请重试；原行程未更改");
   return output;
+}
+
+// Open manual editing without an API request or time validation.
+export function routeDraft(city: City): OptimizedDay[] {
+  return city.days.map(day => ({ dayId: day.id, title: day.title || day.date, note: "当前行程 · 可先手动调整，也可请 AI 排顺", placeIds: day.places.map(place => place.id), times: Object.fromEntries(day.places.filter(place => !place.locked).map(place => [place.id, { time: place.time || "", endTime: place.endTime || "" }])) }));
+
 }
