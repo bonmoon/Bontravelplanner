@@ -6,6 +6,7 @@ import { downloadTripPackageTemplate, importTripPackage } from "./bulkPackage";
 import { cityDateRange, looseDateToIso, sortCitiesByDate, syncCityDatesFromDays } from "./dates";
 import { CatCompanion, CatMusicControl } from "./TravelMusic";
 import { MapDesk } from "./MapDesk";
+import { useSwipeBack } from "./useSwipeBack";
 import { sampleDocument } from "./sample";
 import { loadAssistantSettings, loadDocument, requestPersistentStorage, saveAssistantSettings, saveDocument } from "./storage";
 import type { AssistantOperation, AssistantSettings, City, Expense, JournalEntry, Place, PlaceCategory, Ticket, TicketKind, TravelDocument, Trip, ViewName } from "./types";
@@ -573,6 +574,7 @@ function HomeView({ document, onOpenTrip, onCover, onNew }: { document: TravelDo
 }
 
 function TripView({ detail, onBack, refElement, trip, city, busy, onOpenCity, onCover, onEditCity, onRemoveCity, onPlaceImage, onNewCity, onNewJournal, onNewDay, onRemoveDay, onNewPlace, onSummarize, onToggleLock, onRemovePlace, onOptimize, onAssistant, onExpense, onTicket }: { detail: boolean; onBack: () => void; refElement: React.RefObject<HTMLDivElement | null>; trip: Trip; city: City; busy: string; onOpenCity: (id: string) => void; onCover: (city: City, file: File) => void; onEditCity: (id: string) => void; onRemoveCity: (id: string) => void; onPlaceImage: (dayId: string, placeId: string, files: File[]) => void; onNewCity: () => void; onNewJournal: () => void; onNewDay: () => void; onRemoveDay: (dayId: string) => void; onNewPlace: (dayId: string) => void; onSummarize: (dayId: string, place: Place) => void; onToggleLock: (dayId: string, placeId: string) => void; onRemovePlace: (dayId: string, placeId: string) => void; onOptimize: () => void; onAssistant: () => void; onExpense: () => void; onTicket: () => void }) {
+  const swipeBack = useSwipeBack(detail, onBack);
   const onRandomTrack = undefined;
   const onAiTrack = undefined;
   useEffect(() => {
@@ -583,11 +585,11 @@ function TripView({ detail, onBack, refElement, trip, city, busy, onOpenCity, on
     return () => { window.removeEventListener("travel-city-edit", edit); window.removeEventListener("travel-city-remove", remove); };
   }, [onEditCity, onRemoveCity]);
   const routeTitle = trip.cities.map((item) => item.name).join(" → ");
-  return <div className="trip-page" ref={refElement}>
+  return <div className={`trip-page ${detail ? "city-detail-page" : ""}`} ref={refElement} {...swipeBack}>
     <section className="export-only export-title"><span>TRAVEL CARD · {trip.cities.length} STOPS</span><h1>{trip.title}</h1><p>{trip.startDate} — {trip.endDate}</p><small>{routeTitle}</small></section>
     <section className="trip-heading"><div><span className="eyebrow">{routeTitle}</span><p>{trip.startDate} — {trip.endDate}</p></div><MusicCard trip={trip} busy={busy === "track"} onRandom={onRandomTrack} onAi={onAiTrack} /></section>
     {!detail && <section className="city-strip city-overview"><header><div><h2>城市卡片</h2><span>{trip.cities.length} STOPS</span></div><button className="text-button export-hide" onClick={onNewCity}>＋ 添加城市</button></header><div>{trip.cities.map((item) => <CityCard key={item.id} city={item} tripStartDate={trip.startDate} active={item.id === city.id} onOpen={() => onOpenCity(item.id)} onCover={(file) => onCover(item, file)} />)}<button className="city-add-card export-hide" onClick={onNewCity}>＋<span>下一座城市</span></button></div></section>}
-    {detail && <button className="text-button city-back export-hide" onClick={onBack}>← 所有城市</button>}
+    {detail && <button className="text-button city-back export-hide" onClick={onBack}>← 所有城市 <small className="swipe-hint">右滑也可返回</small></button>}
     {detail && <div className="trip-workspace"><section className="itinerary-card">
       <header className="section-title-row"><div><span className="eyebrow">TODAY IN {city.englishName.toUpperCase()}</span><h2>{city.name} · 顺路行程</h2><p>{city.note}</p></div><div className="itinerary-heading-actions export-hide"><button className="text-button" onClick={onNewJournal}>＋ 写 Journal</button><button className="text-button" onClick={onNewDay}>＋ 新增一天</button><button className="primary-button" onClick={onOptimize} disabled={busy === "route"}>{busy === "route" ? "正在整理…" : "✦ 重新排顺"}</button></div></header>
       <CityJournal city={city} onAdd={onNewJournal} />

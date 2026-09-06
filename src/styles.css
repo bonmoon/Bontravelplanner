@@ -974,3 +974,68 @@ a { color: inherit; }
 .sidebar { overflow-y:auto; }
 .sidebar .cat-companion { flex-shrink:0; }
 @media(min-width:1181px) and (max-height:850px) { .cat-companion .cat-motion { padding:0; } .cat-companion .cat-motion img { height:70px; } .cat-companion p { font-size:11px; line-height:1.4; } .cat-companion .cat-music-control { margin-top:8px; padding:7px; } }
+/* Ticket tools share a single visual language. */
+.tickets-intro { display:block; }
+.tickets-intro h2 { max-width:none; margin-bottom:12px; }
+.ticket-page-actions { display:flex; flex-wrap:wrap; gap:16px; justify-content:space-between; align-items:center; margin:22px 0 28px; }
+.ticket-create-actions { display:flex; flex-wrap:wrap; gap:10px; }
+.ticket-create-actions .primary-button { font-weight:700; line-height:1.3; font-family:inherit; font-size:14px; min-height:44px; border-radius:14px; }
+.ticket-create-actions .ticket-backup-button { background:var(--ink); color:#fffaf0; }
+.swipe-hint { display:none; }
+@media(max-width:760px) {
+  .mobile-nav { min-height:90px; padding:5px 3px max(5px,env(safe-area-inset-bottom)); gap:2px; }
+  .mobile-nav button { min-height:74px; padding:5px 1px; gap:4px; }
+  .mobile-nav i { width:43px; height:43px; }
+  .mobile-nav i img { width:43px; height:43px; object-fit:contain; }
+  .mobile-nav span { font-size:11px; line-height:1.3; font-weight:750; }
+  .page-scroll { padding-bottom:calc(150px + env(safe-area-inset-bottom)); }
+  .floating-assistant-launcher { bottom:calc(115px + env(safe-area-inset-bottom)); }
+  .city-card-actions button,.city-card-actions label,.place-actions > button { min-width:40px; min-height:40px; font-size:18px; }
+  .plain-city-button small { font-size:12px; }
+  .city-counts span { font-size:11px; }
+  .place-note p { font-size:14px; line-height:1.8; }
+  .highlight-list span { font-size:12px; }
+  .swipe-hint { display:inline; margin-left:8px; font-size:11px; opacity:.7; }
+  .tickets-intro h2 { font-size:28px; line-height:1.3; }
+  .tickets-intro p { font-size:14px; line-height:1.7; }
+  .ticket-page-actions { display:grid; grid-template-columns:1fr; gap:14px; margin:18px 0 26px; }
+  .ticket-view-toggle { justify-self:start; }
+  .ticket-view-toggle button { min-height:40px; padding:9px 18px; font-size:13px; }
+  .ticket-create-actions { display:grid; grid-template-columns:1fr 1fr; width:100%; }
+  .ticket-create-actions .primary-button { min-height:46px; padding:10px 8px; font-size:14px; }
+  .ticket-grid { grid-template-columns:1fr; gap:24px; }
+  .ticket-card { display:grid; grid-template-columns:42px minmax(0,1fr); grid-template-rows:auto auto auto; border-radius:22px; overflow:visible; min-width:0; padding-bottom:56px; }
+  .ticket-card:before,.ticket-card:after { display:none; }
+  .ticket-mark { grid-column:1; grid-row:1; padding:18px 3px; border-right:1px dashed #1a274455; }
+  .ticket-mark span { font-size:24px; }
+  .ticket-mark small { font-size:11px; }
+  .ticket-main { grid-column:2; grid-row:1; min-width:0; padding:18px 14px; border-radius:0 20px 0 0; }
+  .ticket-main h3 { font:700 21px/1.35 Georgia,"Songti SC",serif; margin:8px 0 16px; overflow-wrap:anywhere; }
+  .ticket-provider { font-size:12px; }
+  .ticket-fields { grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px 10px; }
+  .ticket-fields span { font-size:14px; line-height:1.5; }
+  .ticket-fields small { font-size:11px; line-height:1.4; }
+  .ticket-stub-files { grid-column:1/-1; grid-row:2; display:flex; align-items:center; justify-content:flex-start; flex-wrap:wrap; gap:14px; border-left:0; border-top:1px dashed #1a274455; padding:16px; text-align:center; }
+  .ticket-stub-files > small { flex-basis:100%; text-align:left; font-size:12px; }
+  .ticket-qr-button { width:96px; flex:none; }
+  .ticket-qr-button img { width:96px; height:96px; object-fit:contain; }
+  .ticket-qr-button small { font-size:11px; }
+  .ticket-attachment-button { width:112px; }
+  .ticket-attachment-button img { width:112px; height:84px; object-fit:contain; background:#fffaf0; }
+  .ticket-attachment-button b { height:72px; display:grid; place-items:center; }
+  .ticket-attachment-button small { font-size:12px; }
+  .ticket-image-add { min-height:44px; padding:10px; font-size:13px; }
+  .ticket-card-actions { position:static; grid-column:1/-1; grid-row:3; display:flex; flex-wrap:wrap; padding:0 16px; gap:10px; }
+  .ticket-edit,.ticket-delete { border-radius:11px; padding:10px 14px; min-height:42px; font-size:13px; box-shadow:none; }
+  .ticket-card > .sticker-add { bottom:12px; right:16px; min-height:36px; font-size:12px; }
+  .ticket-list article { grid-template-columns:1fr auto; gap:8px 12px; padding:16px; }
+  .ticket-list article > time { grid-column:1; font-size:13px; }
+  .ticket-list-kind { grid-column:2; font-size:12px; }
+  .ticket-list article > div:not(.ticket-list-actions),.ticket-list article > p { grid-column:1/-1; font-size:14px; }
+  .ticket-list article strong { font-size:17px; }
+  .ticket-list article small { font-size:12px; }
+  .ticket-list .ticket-list-actions { grid-column:1/-1; grid-row:auto; justify-content:flex-end; }
+  .ticket-list-actions button { min-width:44px; min-height:44px; font-size:18px; }
+}
+@media(max-width:360px) { .mobile-nav span { font-size:10px; } .mobile-nav i,.mobile-nav i img { width:38px; height:38px; } .ticket-fields { grid-template-columns:1fr; } }
+.city-detail-page { touch-action:pan-y pinch-zoom; }

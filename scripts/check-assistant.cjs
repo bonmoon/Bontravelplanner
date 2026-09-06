@@ -105,6 +105,18 @@ async function run() {
   assert.throws(()=>validAppleGuideUrl('javascript:alert(1)'));
   assert.equal(cityGuidePlaces({...city,days:[]}).length,0);
   console.log('PASS: deduplicated city guides, destination-scoped Apple links, escaped offline HTML, safe guide URLs, empty city');
+  const { isBackSwipe } = load('useSwipeBack');
+  assert.ok(isBackSwipe(120,15,400));
+  assert.ok(!isBackSwipe(-120,0,400));
+  assert.ok(!isBackSwipe(120,80,400));
+  assert.ok(!isBackSwipe(35,5,400));
+  assert.ok(!isBackSwipe(120,5,1100));
+  const manifest = JSON.parse(fs.readFileSync(path.join(root,'public/manifest.webmanifest'),'utf8'));
+  const icon = manifest.icons.find(icon => icon.type==='image/png');
+  const png = fs.readFileSync(path.join(root,'public',icon.src));
+  assert.equal(png.readUInt32BE(16),1024); assert.equal(png.readUInt32BE(20),1024);
+  assert.match(fs.readFileSync(path.join(root,'index.html'),'utf8'),/rel="apple-touch-icon"[^>]*bontrip-travel.png/);
+  console.log('PASS: right swipe thresholds and rejection cases, cat PNG manifest and Apple touch icon');
   console.log('PASS: empty/length/malformed/schema retries, bounded retry, auth errors, body timeout, dated guide, new trip, original preservation, QR byte-identical JSON export');
 }
 run().catch(error => { console.error(error); process.exitCode = 1; }).finally(() => { global.fetch = nativeFetch; });
