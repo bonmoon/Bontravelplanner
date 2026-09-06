@@ -1,4 +1,4 @@
-const CACHE = "travel-card-studio-v22";
+const CACHE = "travel-card-studio-v23";
 const SHELL = ["./", "./index.html", "./manifest.webmanifest", "./icons/apple-touch-icon-v22.png", "./assets/bontrip-travel.png"];
 const isImage = request => /\.(png|jpe?g|webp|gif|svg)(\?|$)/i.test(request.url);
 const valid = (request, response) => response?.ok && (!isImage(request) || response.headers.get("content-type")?.startsWith("image/"));

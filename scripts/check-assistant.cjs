@@ -35,6 +35,45 @@ function responses(values) {
   };
 }
 async function run() {
+  const engine=load('ledgerEngine'), business=load('assistantBusiness');
+  const people=[{id:'p',name:'Patrick',avatar:'🙂',isMe:true},{id:'a',name:'Alex',avatar:'🙂',isMe:false}];
+  const bill=(id,amount,paidBy='p',splitType='equal',participants=[{memberId:'p'},{memberId:'a'}],currency='EUR')=>({id,title:id,date:'2026-09-06',cityId:'vienna',category:'餐饮',amount,currency,paidBy,splitType,participants});
+  let group={...trip,members:people,expenses:[bill('dinner',100)],settlements:[]};
+  assert.equal(engine.calculateMemberBalances(group)[0].balances.p,50);
+  group={...group,expenses:[...group.expenses,bill('taxi',20,'a')]};
+  assert.equal(engine.calculateMemberBalances(group)[0].balances.p,40);
+  group={...group,expenses:[...group.expenses,bill('museum',13,'p','personal',[{memberId:'p'}])]};
+  assert.equal(engine.calculateMemberBalances(group)[0].balances.p,40);
+  assert.equal(engine.calculateMemberBalances({...group,expenses:[bill('dinner',60,'p','exact',[{memberId:'p',amount:35},{memberId:'a',amount:25}]) ]})[0].balances.a,-25);
+  assert.equal(engine.calculateMemberBalances({...group,expenses:group.expenses.filter(e=>e.id!=='taxi')})[0].balances.p,50);
+  const split=engine.calculateExpenseShares(bill('odd',0.01),people);assert.equal(split.reduce((a,p)=>a+p.amount,0),0.01);
+  assert.deepEqual(engine.calculateExpenseShares(bill('ratio',60,'p','percentage',[{memberId:'p',percentage:60},{memberId:'a',percentage:40}]),people).map(p=>p.amount),[36,24]);
+  assert.deepEqual(engine.calculateExpenseShares(bill('shares',60,'p','shares',[{memberId:'p',shares:2},{memberId:'a',shares:1}]),people).map(p=>p.amount),[40,20]);
+  assert.throws(()=>engine.calculateExpenseShares(bill('bad',60,'p','exact',[{memberId:'p',amount:35},{memberId:'a',amount:23}]),people),/还差/);
+  assert.throws(()=>engine.calculateExpenseShares(bill('none',60,'p','equal',[]),people),/参与人/);
+  group={...group,expenses:[...group.expenses,bill('swiss',36,'a','equal',undefined,'CHF')]};
+  assert.equal(engine.calculateMemberBalances(group).length,2);
+  const debt=engine.calculateSettlements(group).find(d=>d.currency==='EUR');assert.equal(debt.amount,40);
+  group={...group,settlements:[{...debt,id:'settled',date:'2026-09-06',note:''}]};
+  assert.equal(engine.calculateMemberBalances(group).find(b=>b.currency==='EUR').balances.p,0);
+  assert.equal(group.expenses.length,4);
+  const refund={...bill('refund',20),transactionType:'refund'};
+  assert.equal(engine.calculateMemberBalances({...group,settlements:[],expenses:[bill('buy',100),refund]})[0].total,80);
+  const legacy={...trip,expenses:[{id:'old',title:'Old',amount:13,currency:'€',date:'2026-09-06',cityId:'vienna',category:'其他'}]};
+  assert.equal(engine.normalizeExpense(legacy.expenses[0],engine.membersOf(legacy)).splitType,'personal');
+  assert.equal(engine.calculateSettlements(legacy).length,0);
+  const journalOp={type:'add_journal',cityId:'vienna',journal:{title:'美景宫的一天',text:'用户总结的内容',date:'2026-09-06'}};
+  const wrote=business.applyBusinessOperations(group,[journalOp],'vienna');
+  assert.equal(wrote.cities[0].journal[0].text,'用户总结的内容');assert.equal(group.cities[0].journal,undefined);
+  assert.throws(()=>business.applyBusinessOperations(group,[{...journalOp,cityId:'missing'}],'vienna'),/所属城市|所属|城市/);
+  assert.throws(()=>business.expenseFromOperation(group,{type:'add_expense',expense:{title:'x',amount:10}},'vienna'),/paidBy/);
+  assert.throws(()=>business.expenseFromOperation(group,{type:'add_expense',expense:bill('x',10,'unknown')},'vienna'),/无法确认/);
+  const updated=business.applyBusinessOperations(group,[{type:'update_expense',expenseId:'dinner',changes:{paidBy:'a'}}],'vienna');
+  assert.equal(updated.expenses.find(e=>e.id==='dinner').paidBy,'a');assert.equal(updated.expenses.length,group.expenses.length);
+  assert.deepEqual(JSON.parse(JSON.stringify(wrote)).settlements,wrote.settlements);
+  assert.deepEqual(JSON.parse(JSON.stringify(wrote)).members,people);
+  console.log('PASS: all five split acceptance cases, penny rounding, currency isolation, refunds, settlements, legacy records, journal writes and schema rejection');
+
   const { normalizeRoute, routeDraft } = load('routePlanning');
   const mealCity = { ...city, days: [{ ...city.days[0], places: [{ ...city.days[0].places[0], name: '晚餐' }] }] };
   const makeMeal = (time, endTime) => [{ dayId: 'sep17', placeIds: ['A'], times: { A: { time, endTime } } }];
