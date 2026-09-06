@@ -1,3 +1,4 @@
+import { PhotoOrder } from "./PhotoOrder";
 import { createPortal } from "react-dom";
 import type { City, DayPlan, Place, Ticket } from "./types";
 import { appleMapsUrl, googleMapsUrl } from "./maps";
@@ -80,6 +81,7 @@ export function PlaceRow({
   onToggleLock,
   onRemove,
   onImages,
+  onReorder,
   busy,
 }: {
   place: Place;
@@ -90,6 +92,7 @@ export function PlaceRow({
   onToggleLock: () => void;
   onRemove: () => void;
   onImages: (files: File[]) => void;
+  onReorder: (images: string[]) => void;
   busy: boolean;
 }) {
   return (
@@ -108,6 +111,7 @@ export function PlaceRow({
             {!!place.gallery?.length && <div className="place-gallery">{place.gallery.map((image, galleryIndex) => <img key={`${place.id}-${galleryIndex}`} src={image} alt={`${place.name}补充图片 ${galleryIndex + 1}`} />)}</div>}
             <label className={`place-media-add ${place.image ? "icon-only" : ""}`} title={place.image ? "添加更多图片" : "添加图片"}><span aria-hidden="true">＋</span>{!place.image && <b>添加图片</b>}<input type="file" accept="image/*" multiple onChange={(event) => { const files = Array.from(event.target.files || []); if (files.length) onImages(files); event.target.value = ""; }} /></label>
           </div>
+          {!!place.gallery?.length && <PhotoOrder images={[...(place.image ? [place.image] : []), ...place.gallery]} onChange={onReorder} />}
         </div>
         <div className="place-actions export-hide">
           <button onClick={onSummarize} disabled={busy} title="补充看点">{busy ? "…" : "✦"}</button>

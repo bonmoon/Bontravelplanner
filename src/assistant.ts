@@ -112,6 +112,7 @@ export async function testAssistantConnection(settings: AssistantSettings): Prom
 }
 
 const baseSystem = `你是中文旅行助手。写作简洁、具体、有旅行现场感，不使用营销套话。
+默认晚餐不晚于20:00开始，每天所有活动不晚于21:00结束。为景点停留、午晚餐和交通留出合理时间；排不下时说明取舍并询问用户，不静默删除、不压缩成打卡、不排到深夜。用户可以通过连续对话微调日期、地点顺序和起止时间。
 尊重用户已经锁定的地点与时间。涉及路线时优先考虑地理邻近、开放时间、用餐节奏与步行负担。
 只根据已有信息工作，不编造票号、营业时间或精确交通时间。`;
 
@@ -148,21 +149,21 @@ export async function summarizePlace(settings: AssistantSettings, place: Place, 
   };
 }
 
-export async function optimizeCity(settings: AssistantSettings, trip: Trip, city: City): Promise<OptimizedDay[]> {
+export async function optimizeCity(settings: AssistantSettings, trip: Trip, city: City, refinement = "", draft?: OptimizedDay[]): Promise<OptimizedDay[]> {
   const days = city.days.map((day) => ({
     id: day.id,
     date: day.date,
     title: day.title,
-    places: day.places.map((place) => ({ id: place.id, name: place.name, type: place.category, time: place.time, locked: !!place.locked })),
+    places: day.places.map((place) => ({ id: place.id, name: place.name, type: place.category, time: place.time, endTime: place.endTime, duration: place.duration, summary: place.summary, locked: !!place.locked })),
   }));
   const content = await ask(
     settings,
     [
       {
         role: "system",
-        content: `${baseSystem}\n只输出 JSON：{"days":[{"dayId":"原日期id","title":"当日主题","placeIds":["地点id"],"note":"调整说明"}]}。只调整每天内部地点顺序，不跨日期移动。地点必须全部保留且每个只出现一次，锁定地点保持原日期和位置。精确复制输入的 dayId 与地点 id，不要重新生成。`,
+        content: `${baseSystem}\n只输出 JSON：{"days":[{"dayId":"原日期id","title":"当日主题","placeIds":["地点id"],"times":{"地点id":{"time":"09:00","endTime":"10:30"}},"note":"调整说明及时间取舍"}]}。必须为每个非锁定地点提供合理起止时间，站间至少预留20分钟（估计，非实时导航）。晚餐不晚于20:00开始，全部21:00前结束。只调整每天内部地点顺序，不跨日期移动。地点必须全部保留且每个只出现一次，锁定地点保持原日期和位置。精确复制输入的 dayId 与地点 id，不要重新生成。`,
       },
-      { role: "user", content: `旅行：${trip.title}\n城市：${city.name}\n日期与地点：${JSON.stringify(days)}\n请整理成最顺、不过度拥挤的 json 行程。` },
+      { role: "user", content: `旅行：${trip.title}\n城市：${city.name}\n日期与地点：${JSON.stringify(days)}\n当前预览：${JSON.stringify(draft || [])}\n用户微调要求：${refinement}\n请整理成最顺、不过度拥挤的 json 行程。` },
     ],
     true, "days",
   );

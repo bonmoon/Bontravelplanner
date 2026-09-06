@@ -1039,3 +1039,5 @@ a { color: inherit; }
 }
 @media(max-width:360px) { .mobile-nav span { font-size:10px; } .mobile-nav i,.mobile-nav i img { width:38px; height:38px; } .ticket-fields { grid-template-columns:1fr; } }
 .city-detail-page { touch-action:pan-y pinch-zoom; }
+
+.photo-order { margin: 16px 0; } .photo-order summary { cursor:pointer; padding:12px; } .photo-order-row { display:flex; align-items:center; gap:12px; padding:8px; border-bottom:1px solid #ccc; } .photo-order-row img { width:80px; height:72px; object-fit:cover; border-radius:12px; } .photo-order-row button { min-width:44px; min-height:44px; } .photo-drag { touch-action:none; cursor:grab; } .route-edit-row { display:flex!important; flex-wrap:wrap; gap:12px; padding:12px!important; } .route-edit-row > div { display:flex; flex-wrap:wrap; gap:8px; } .route-edit-row input { width:125px; min-height:44px; font:inherit; } .route-edit-row button { min-width:44px; min-height:44px; } .route-refine textarea { width:100%; min-height:88px; font:inherit; padding:12px; } .route-refine { margin:20px 0; }

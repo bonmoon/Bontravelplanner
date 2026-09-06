@@ -17,6 +17,8 @@ import { exportTicketsHtml } from "./ticketExport";
 import { tripFromAssistant } from "./assistantTrip";
 import { StickerProvider } from "./Stickers";
 import { applyRecordEdits } from "./assistantEdits";
+import { normalizeRoute } from "./routePlanning";
+import { RouteEditor } from "./RouteEditor";
 import { PlaceEditor } from "./PlaceEditor";
 
 const navItems: Array<{ id: ViewName; label: string; icon: string; image?: string }> = [
@@ -209,6 +211,8 @@ function App() {
   }
 
   function acceptOptimization() {
+    const target = trip.cities.find(item => item.id === optimizedCityId);
+    try { if (target) normalizeRoute({ ...target, days: target.days.filter(day => optimized.some(item => item.dayId === day.id)) }, optimized); } catch (error) { showToast((error as Error).message); return; }
     updateTrip((current) => ({ ...current, cities: current.cities.map((item) => item.id === optimizedCityId ? applyOptimizedDays(item, optimized) : item) }));
     setModal("none");
     showToast("路线已经重新排好");
@@ -444,6 +448,7 @@ function App() {
               onEditCity={(id) => { setActiveCityId(id); setModal("editCity"); }}
               onRemoveCity={(id) => { if (trip.cities.length <= 1) return showToast("一段旅行至少保留一座城市"); if (!window.confirm("删除整张城市卡？其中的日期和地点也会一起移除。")) return; const remaining = trip.cities.filter((item) => item.id !== id); updateTrip((current) => ({ ...current, cities: current.cities.filter((item) => item.id !== id) })); if (id === activeCityId) setActiveCityId(remaining[0]?.id || ""); }}
               onPlaceImage={setPlaceImages}
+              onReorderImages={(dayId, placeId, images) => updateCity(current => ({ ...current, days: current.days.map(day => day.id === dayId ? { ...day, places: day.places.map(place => place.id === placeId ? { ...place, image: images[0], gallery: images.slice(1) } : place) } : day) }))}
               onNewCity={() => setModal("city")}
               onNewJournal={() => setModal("journal")}
               onNewDay={() => updateCity((current) => ({ ...current, days: [...current.days, { id: uid("day"), date: `Day ${current.days.length + 1}`, weekday: "", title: "新的一天", places: [] }] }))}
@@ -480,7 +485,7 @@ function App() {
       {modal === "ticket" && <TicketEditor settings={settings} cityId={city?.id || trip.cities[0]?.id || ""} onClose={() => setModal("none")} onCreate={(created) => { updateTrip((current) => ({ ...current, tickets: [created, ...current.tickets] })); setModal("none"); showToast("票据已经收好了"); }} />}
       {modal === "editTicket" && <TicketEditor settings={settings} initial={trip.tickets.find((item) => item.id === editingTicketId)} cityId={city?.id || trip.cities[0]?.id || ""} onClose={() => setModal("none")} onCreate={(edited) => { updateTrip((current) => ({ ...current, tickets: current.tickets.map((item) => item.id === editingTicketId ? { ...edited, id: item.id } : item) })); setModal("none"); showToast("票据已经更新"); }} />}
       {modal === "expense" && city && <ExpenseModal draft={expenseDraft} onDraft={setExpenseDraft} busy={busy === "expense"} onQuick={quickExpense} onClose={() => setModal("none")} onManual={(created) => { updateTrip((current) => ({ ...current, expenses: [created, ...current.expenses] })); setModal("none"); showToast("这一笔已经记下"); }} cityId={city.id} />}
-      {modal === "route" && city && <RouteModal city={city} optimized={optimized} onClose={() => setModal("none")} onAccept={acceptOptimization} />}
+      {modal === "route" && city && <RouteEditor city={trip.cities.find(item => item.id === optimizedCityId) || city} optimized={optimized} onChange={setOptimized} onClose={() => setModal("none")} onAccept={acceptOptimization} onRefine={async message => { const target = trip.cities.find(item => item.id === optimizedCityId) || city; return optimizeCity(settings, trip, { ...target, days: target.days.filter(day => optimized.some(item => item.dayId === day.id)) }, message, optimized); }} />}
       <FloatingAssistant open={assistantOpen} onOpen={() => setAssistantOpen(true)} onClose={() => setAssistantOpen(false)} trip={trip} draft={chatDraft} onDraft={setChatDraft} onSend={sendChat} busy={busy === "chat"} onTicket={() => setModal("ticket")} onExpense={() => setModal("expense")} />
       <div className={`toast ${toast ? "show" : ""}`}>{toast}</div>
     </div></StickerProvider>
@@ -573,7 +578,7 @@ function HomeView({ document, onOpenTrip, onCover, onNew }: { document: TravelDo
   </section>;
 }
 
-function TripView({ detail, onBack, refElement, trip, city, busy, onOpenCity, onCover, onEditCity, onRemoveCity, onPlaceImage, onNewCity, onNewJournal, onNewDay, onRemoveDay, onNewPlace, onSummarize, onToggleLock, onRemovePlace, onOptimize, onAssistant, onExpense, onTicket }: { detail: boolean; onBack: () => void; refElement: React.RefObject<HTMLDivElement | null>; trip: Trip; city: City; busy: string; onOpenCity: (id: string) => void; onCover: (city: City, file: File) => void; onEditCity: (id: string) => void; onRemoveCity: (id: string) => void; onPlaceImage: (dayId: string, placeId: string, files: File[]) => void; onNewCity: () => void; onNewJournal: () => void; onNewDay: () => void; onRemoveDay: (dayId: string) => void; onNewPlace: (dayId: string) => void; onSummarize: (dayId: string, place: Place) => void; onToggleLock: (dayId: string, placeId: string) => void; onRemovePlace: (dayId: string, placeId: string) => void; onOptimize: () => void; onAssistant: () => void; onExpense: () => void; onTicket: () => void }) {
+function TripView({ detail, onBack, refElement, trip, city, busy, onOpenCity, onCover, onEditCity, onRemoveCity, onPlaceImage, onReorderImages, onNewCity, onNewJournal, onNewDay, onRemoveDay, onNewPlace, onSummarize, onToggleLock, onRemovePlace, onOptimize, onAssistant, onExpense, onTicket }: { detail: boolean; onBack: () => void; refElement: React.RefObject<HTMLDivElement | null>; trip: Trip; city: City; busy: string; onOpenCity: (id: string) => void; onCover: (city: City, file: File) => void; onEditCity: (id: string) => void; onRemoveCity: (id: string) => void; onPlaceImage: (dayId: string, placeId: string, files: File[]) => void; onReorderImages: (dayId: string, placeId: string, images: string[]) => void; onNewCity: () => void; onNewJournal: () => void; onNewDay: () => void; onRemoveDay: (dayId: string) => void; onNewPlace: (dayId: string) => void; onSummarize: (dayId: string, place: Place) => void; onToggleLock: (dayId: string, placeId: string) => void; onRemovePlace: (dayId: string, placeId: string) => void; onOptimize: () => void; onAssistant: () => void; onExpense: () => void; onTicket: () => void }) {
   const swipeBack = useSwipeBack(detail, onBack);
   const onRandomTrack = undefined;
   const onAiTrack = undefined;
@@ -593,7 +598,7 @@ function TripView({ detail, onBack, refElement, trip, city, busy, onOpenCity, on
     {detail && <div className="trip-workspace"><section className="itinerary-card">
       <header className="section-title-row"><div><span className="eyebrow">TODAY IN {city.englishName.toUpperCase()}</span><h2>{city.name} · 顺路行程</h2><p>{city.note}</p></div><div className="itinerary-heading-actions export-hide"><button className="text-button" onClick={onNewJournal}>＋ 写 Journal</button><button className="text-button" onClick={onNewDay}>＋ 新增一天</button><button className="primary-button" onClick={onOptimize} disabled={busy === "route"}>{busy === "route" ? "正在整理…" : "✦ 重新排顺"}</button></div></header>
       <CityJournal city={city} onAdd={onNewJournal} />
-      {city.days.length ? city.days.map((day) => <DaySection key={day.id} day={day} onAdd={() => onNewPlace(day.id)} onRemove={() => onRemoveDay(day.id)}>{day.places.map((place, index) => <PlaceRow key={place.id} place={place} city={city} index={index} isLast={index === day.places.length - 1} busy={busy === place.id} onSummarize={() => onSummarize(day.id, place)} onToggleLock={() => onToggleLock(day.id, place.id)} onRemove={() => onRemovePlace(day.id, place.id)} onImages={(files) => onPlaceImage(day.id, place.id, files)} />)}</DaySection>) : <EmptyDay onAdd={() => { onNewDay(); }} />}
+      {city.days.length ? city.days.map((day) => <DaySection key={day.id} day={day} onAdd={() => onNewPlace(day.id)} onRemove={() => onRemoveDay(day.id)}>{day.places.map((place, index) => <PlaceRow key={place.id} place={place} city={city} index={index} isLast={index === day.places.length - 1} busy={busy === place.id} onSummarize={() => onSummarize(day.id, place)} onToggleLock={() => onToggleLock(day.id, place.id)} onRemove={() => onRemovePlace(day.id, place.id)} onImages={(files) => onPlaceImage(day.id, place.id, files)} onReorder={images => onReorderImages(day.id, place.id, images)} />)}</DaySection>) : <EmptyDay onAdd={() => { onNewDay(); }} />}
     </section><aside className="trip-side export-hide"><section className="quick-card assistant-quick"><span>✦</span><div><h3>行程助手</h3><p>一起整理地点、看点与每天的节奏。</p></div><button onClick={onAssistant}>聊一聊</button></section><section className="quick-card"><span>▦</span><div><h3>随手记账</h3><p>{trip.expenses.length} 笔旅行支出已经收好。</p></div><button onClick={onExpense}>记一笔</button></section><section className="quick-card"><span>▱</span><div><h3>票据夹</h3><p>{trip.tickets.length} 张车票、门票与预订单。</p></div><button onClick={onTicket}>加票据</button></section></aside></div>}
   </div>;
 }
@@ -689,11 +694,6 @@ function JournalModal({ city, onClose, onCreate }: { city: City; onClose: () => 
 function ExpenseModal({ cityId, draft, onDraft, busy, onQuick, onClose, onManual }: { cityId: string; draft: string; onDraft: (value: string) => void; busy: boolean; onQuick: () => void; onClose: () => void; onManual: (expense: Expense) => void }) {
   function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const data = new FormData(event.currentTarget); onManual({ id: uid("expense"), cityId, date: String(data.get("date") || new Date().toISOString().slice(0, 10)), title: String(data.get("title")), amount: Number(data.get("amount")), currency: String(data.get("currency") || "¥"), category: String(data.get("category") || "其他") as Expense["category"] }); }
   return <Modal title="随手记一笔" eyebrow="QUICK LEDGER" onClose={onClose}><div className="expense-quick"><textarea value={draft} onChange={(event) => onDraft(event.target.value)} placeholder="刚才晚餐 38.5 欧，另外买了 10 欧交通卡" /><button className="primary-button" onClick={onQuick} disabled={busy || !draft.trim()}>{busy ? "正在整理…" : "✦ 帮我记下"}</button></div><div className="or-line"><span>或者自己填写</span></div><form className="modal-form compact" onSubmit={submit}><label><span>花在什么地方</span><input name="title" required placeholder="晚餐" /></label><div className="form-row three"><label><span>金额</span><input name="amount" type="number" step="0.01" required /></label><label><span>币种</span><input name="currency" defaultValue="€" /></label><label><span>分类</span><select name="category">{["交通", "餐饮", "住宿", "门票", "购物", "其他"].map((item) => <option key={item}>{item}</option>)}</select></label></div><label><span>日期</span><input name="date" type="date" defaultValue={new Date().toISOString().slice(0, 10)} /></label><footer><button type="button" onClick={onClose}>取消</button><button className="primary-button">记下</button></footer></form></Modal>;
-}
-
-function RouteModal({ city, optimized, onClose, onAccept }: { city: City; optimized: OptimizedDay[]; onClose: () => void; onAccept: () => void }) {
-  const places = new Map(city.days.flatMap((day) => day.places).map((place) => [place.id, place]));
-  return <Modal title="路线排顺了" eyebrow={city.name} onClose={onClose} wide><div className="route-preview">{optimized.map((day) => <section key={day.dayId}><header><h3>{day.title}</h3><p>{day.note}</p></header><div>{day.placeIds.map((id, index) => <article key={id}><span>{index + 1}</span><strong>{places.get(id)?.name}</strong><small>{day.times[id]?.time || places.get(id)?.time} – {day.times[id]?.endTime || places.get(id)?.endTime || "待定"} · {places.get(id)?.category}</small></article>)}</div></section>)}</div><footer className="modal-footer"><button onClick={onClose}>先不改</button><button className="primary-button" onClick={onAccept}>使用这条路线</button></footer></Modal>;
 }
 
 export default App;

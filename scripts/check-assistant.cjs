@@ -35,6 +35,18 @@ function responses(values) {
   };
 }
 async function run() {
+  const { normalizeRoute } = load('routePlanning');
+  const mealCity = { ...city, days: [{ ...city.days[0], places: [{ ...city.days[0].places[0], name: '晚餐' }] }] };
+  const makeMeal = (time, endTime) => [{ dayId: 'sep17', placeIds: ['A'], times: { A: { time, endTime } } }];
+  assert.equal(normalizeRoute(mealCity, makeMeal('19:00', '20:00'))[0].times.A.time, '19:00');
+  assert.throws(() => normalizeRoute(mealCity, makeMeal('20:30', '21:00')), /20:00/);
+  assert.throws(() => normalizeRoute(mealCity, makeMeal('19:30', '21:30')), /21:00/);
+  assert.throws(() => normalizeRoute(mealCity, makeMeal('', '20:00')), /起止时间/);
+  assert.throws(() => normalizeRoute(city, [{ dayId: 'sep17', placeIds: ['A','B'], times: { A: {time:'09:00',endTime:'10:00'}, B:{time:'09:30',endTime:'11:00'} } }]), /冲突/);
+  const lockedCity = { ...mealCity, days: [{...mealCity.days[0], places:[{...mealCity.days[0].places[0],locked:true,time:'18:00',endTime:'19:00'}]}] };
+  assert.equal(normalizeRoute(lockedCity, makeMeal('19:00','20:00'))[0].times.A, undefined);
+  console.log('PASS: AI timing respected, dinner/end-of-day limits, incomplete times, overlap and locked stops');
+
   assert.deepEqual(parseAssistantJson('说明\n```json\n{"reply":"看 {这里}","operations":[]}\n```'), { reply: '看 {这里}', operations: [] });
   assert.throws(() => parseAssistantJson('null'));
   assert.throws(() => parseAssistantJson('[{"operations":[]}]'));
