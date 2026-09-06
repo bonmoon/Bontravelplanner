@@ -1053,6 +1053,15 @@ a { color: inherit; }
 .ledger-balance { color:#df5d46; }
 .ledger-choices { display:flex;flex-wrap:wrap;gap:8px; }
 .ledger-choices button,.ledger-filter-selects select,.ledger-entry-actions button { min-height:44px;font:inherit;border:1px solid #1b294444;border-radius:12px;background:#fff9ed;padding:8px 12px;color:#1b2944 }
+.member-avatar { width:30px; height:30px; display:inline-grid; place-items:center; flex:0 0 30px; overflow:hidden; border:1.5px solid var(--ink); border-radius:50%; background:#fff7df; vertical-align:middle; font-size:16px; line-height:1; }
+.member-avatar img { width:100%; height:100%; object-fit:contain; object-position:center; transform:scale(1.18); }
+.avatar-stack { display:inline-flex; align-items:center; margin-right:6px; vertical-align:middle; }
+.avatar-stack .member-avatar { margin-left:-7px; }
+.avatar-stack .member-avatar:first-child { margin-left:0; }
+.avatar-presets { display:flex; gap:6px; align-items:center; }
+.avatar-presets button { padding:2px; border:1px solid transparent; border-radius:50%; background:transparent; cursor:pointer; }
+.avatar-presets button[aria-pressed="true"] { border-color:var(--red); }
+.ledger-members .member-avatar { width:42px; height:42px; flex-basis:42px; }
 .ledger-choices [aria-pressed=true] { background:#1b2944;color:#fff9ed }
 .ledger-choices img,.ledger-members img { width:36px;height:36px;border-radius:50%;object-fit:cover }
 .ledger-filters { margin-bottom:20px; }.ledger-filters summary { padding:12px 0; }

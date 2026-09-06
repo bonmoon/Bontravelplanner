@@ -3,6 +3,8 @@ import { uid } from "./types";
 import { calculateMemberBalances, calculateSettlements, membersOf } from "./ledgerEngine";
 import { normalizeRoute, type OptimizedDay } from "./routePlanning";
 import { AssistantFormatError, parseAssistantJson, readAssistantContent } from "./assistantResponse";
+import { applyBusinessOperations } from "./assistantBusiness";
+import { applyRecordEdits } from "./assistantEdits";
 export type { OptimizedDay } from "./routePlanning";
 
 type JsonObject = Record<string, unknown>;
@@ -280,6 +282,20 @@ export async function commandTrip(settings: AssistantSettings, trip: Trip, messa
     result = jsonFromText(content);
   }
   if (wantsFullPlan && !isRouteRequest() && plannedCount() < 4) throw new Error("模型返回的行程不完整，没有写入数据；请重试或切换模型");
+  const journalWrite = /journal|手记|日记/i.test(message) && /写|放|存|收进|添加|追加|更新|修改|整理|总结|summar|save|add|write/i.test(message) && !/删除/.test(message);
+  const journalReady = () => {
+    try {
+      const ops = result.operations as AssistantOperation[];
+      if (!Array.isArray(ops) || !ops.length || ops.some(op => op.type !== "add_journal" && !(op.type === "edit_record" && op.entity === "journal"))) return false;
+      const updated = applyBusinessOperations(applyRecordEdits(trip, ops), ops, "");
+      return ops.every(op => op.type === "add_journal" ? updated.cities.some(c => c.id === op.cityId && c.journal?.some(j => j.text.trim() && j.text === op.journal.text)) : op.type === "edit_record" && typeof op.changes.text === "string" && op.changes.text.trim().length > 0);
+    } catch { return false; }
+  };
+  if (journalWrite && !journalReady()) {
+    content = await ask(settings, [...messages, { role: "assistant", content }, { role: "user", content: '请修正为城市手记草稿，只输出 add_journal 或 edit_record(entity=journal) 操作。必须包含实际总结正文 text（非空），分段和编号使用换行。不可用 city.note 代替 Journal。cityId 必须来自上下文；目标城市不明确时返回空 operations 并询问。已有手记修改时使用准确 journal ID 并提供完整 text。不要只回复完成。' }], true, "operations");
+    result = jsonFromText(content);
+    if (!journalReady()) return { operations: [], reply: "这次还没有生成可保存的手记正文。请确认要存入哪座城市，并附上需要整理的内容；现有资料未修改。" };
+  }
   const explicitYear = /20\d{2}/.test(message);
   const operations = (Array.isArray(result.operations) ? result.operations.filter((item): item is AssistantOperation => !!item && typeof item === "object" && typeof (item as JsonObject).type === "string").slice(0, 12) : []).map((operation) => {
     if (!explicitYear && operation.type === "add_expense" && operation.expense.date) return { ...operation, expense: { ...operation.expense, date: operation.expense.date.replace(/^20\d{2}/, tripYear) } };

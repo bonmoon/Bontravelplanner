@@ -135,9 +135,11 @@ function App() {
   }
 
   function updateTrip(recipe: (current: Trip) => Trip) {
+    const targetId = trip?.id || document.activeTripId;
     setDocument((current) => ({
       ...current,
-      trips: current.trips.map((item) => item.id === current.activeTripId ? { ...recipe(item), updatedAt: new Date().toISOString() } : item),
+      activeTripId: current.trips.some(item => item.id === targetId) ? targetId : current.activeTripId,
+      trips: current.trips.map((item) => item.id === targetId ? { ...recipe(item), updatedAt: new Date().toISOString() } : item),
     }));
   }
 
@@ -490,7 +492,7 @@ function App() {
       {pendingOps && modal !== "expense" && <Modal title="确认旅行助手的修改" eyebrow="REVIEW" onClose={()=>setPendingOps(null)} wide><p>确认后才会保存。删除操作会移除对应资料，请仔细核对。</p>{pendingOps.map((op,index)=>{
         const expense=expenseFromOperation(trip,op,city?.id||"");
         return <section className="assistant-change" key={index}>{expense?<><h3>{expense.title} · {money(expense.amount,expense.currency)}</h3><p>{membersOf(trip).find(m=>m.id===expense.paidBy)?.name} 付款</p>{calculateExpenseShares(expense,membersOf(trip)).map(p=><p key={p.memberId}>{membersOf(trip).find(m=>m.id===p.memberId)?.name} · {money(p.amount,expense.currency)}</p>)}<button onClick={()=>{setExpenseToEdit(expense);setPendingExpenseIndex(index);setModal("expense");}}>修改这笔分账</button></>:op.type==="add_journal"?<><h3>Journal · {op.journal.title}</h3><small>{trip.cities.find(c=>c.id===op.cityId)?.name} · {op.journal.date}</small><p>{op.journal.text}</p></>:<><h3>{op.type==="delete_record"?"删除记录":op.type==="add_member"?"添加同行人":"旅行资料修改"}</h3><p>{operationSummary(op,trip)}</p></>}</section>;
-      })}<footer className="modal-footer"><button onClick={()=>setPendingOps(null)}>取消</button><button className="primary-button" onClick={()=>{try{if(trip.id!==pendingTripId)throw new Error("旅行已切换，请重新整理");applyAssistantOperations(pendingOps);updateTrip(current=>({...current,chats:[...current.chats,{id:uid("chat"),role:"assistant",content:"已确认并保存这次修改。",createdAt:new Date().toISOString()}]}));setPendingOps(null);showToast("修改已保存");}catch(e){showToast((e as Error).message);}}}>确认保存</button></footer></Modal>}
+      })}<footer className="modal-footer"><button onClick={()=>setPendingOps(null)}>取消</button><button className="primary-button" onClick={()=>{try{if(trip.id!==pendingTripId)throw new Error("旅行已切换，请重新整理");const journalTarget=pendingOps.find(op=>op.type==="add_journal");applyAssistantOperations(pendingOps);if(journalTarget?.type==="add_journal"){setActiveCityId(journalTarget.cityId);setCityDetail(true);setView("trip");}updateTrip(current=>({...current,chats:[...current.chats,{id:uid("chat"),role:"assistant",content:journalTarget?.type==="add_journal"?`已将「${journalTarget.journal.title}」写入对应城市的旅行手记。`:"已确认并保存这次修改。",createdAt:new Date().toISOString()}]}));setPendingOps(null);showToast(journalTarget?.type==="add_journal"?"城市 Journal 已写入":"修改已保存");}catch(e){showToast((e as Error).message);}}}>确认保存</button></footer></Modal>}
       <FloatingAssistant open={assistantOpen} onOpen={() => setAssistantOpen(true)} onClose={() => setAssistantOpen(false)} trip={trip} draft={chatDraft} onDraft={setChatDraft} onSend={sendChat} busy={busy === "chat"} onTicket={() => setModal("ticket")} onExpense={() => setModal("expense")} />
       <div className={`toast ${toast ? "show" : ""}`}>{toast}</div>
     </div></StickerProvider>
@@ -614,7 +616,7 @@ function CityJournal({ city, onAdd }: { city: City; onAdd: () => void }) {
   const entries = city.journal || [];
   return <section className={`city-journal ${entries.length ? "has-entries" : "is-empty"}`}>
     <header><div><span className="eyebrow">CITY JOURNAL</span><h3>{city.name}的旅行手记</h3></div><button className="text-button export-hide" onClick={onAdd}>＋ 写一篇</button></header>
-    {entries.length ? <div className="journal-grid">{entries.map((entry) => <article key={entry.id}>{entry.images.length ? <div className={`journal-images count-${Math.min(3, entry.images.length)}`}>{entry.images.slice(0, 3).map((image, index) => <img key={`${entry.id}-${index}`} src={image} alt={`${entry.title}照片 ${index + 1}`} />)}</div> : <div className="journal-image-empty">JOURNAL</div>}<div className="journal-copy"><time>{entry.date}</time><h4>{entry.title}</h4><p>{entry.text}</p></div></article>)}</div> : <button className="journal-empty-card export-hide" onClick={onAdd}><span>＋</span><strong>挑几张今天最有代表性的照片</strong><small>把一天写成一页杂志式城市手记</small></button>}
+    {entries.length ? <div className="journal-grid">{entries.map((entry) => { const images = Array.isArray(entry.images) ? entry.images : []; return <article key={entry.id}>{images.length ? <div className={`journal-images count-${Math.min(3, images.length)}`}>{images.slice(0, 3).map((image, index) => <img key={`${entry.id}-${index}`} src={image} alt={`${entry.title}照片 ${index + 1}`} />)}</div> : <div className="journal-image-empty">JOURNAL</div>}<div className="journal-copy"><time>{entry.date}</time><h4>{entry.title}</h4><p>{entry.text}</p></div></article>; })}</div> : <button className="journal-empty-card export-hide" onClick={onAdd}><span>＋</span><strong>挑几张今天最有代表性的照片</strong><small>把一天写成一页杂志式城市手记</small></button>}
   </section>;
 }
 
