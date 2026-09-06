@@ -35,12 +35,14 @@ function responses(values) {
   };
 }
 async function run() {
-  const { normalizeRoute } = load('routePlanning');
+  const { normalizeRoute, routeDraft } = load('routePlanning');
   const mealCity = { ...city, days: [{ ...city.days[0], places: [{ ...city.days[0].places[0], name: '晚餐' }] }] };
   const makeMeal = (time, endTime) => [{ dayId: 'sep17', placeIds: ['A'], times: { A: { time, endTime } } }];
   assert.equal(normalizeRoute(mealCity, makeMeal('19:00', '20:00'))[0].times.A.time, '19:00');
   assert.throws(() => normalizeRoute(mealCity, makeMeal('20:30', '21:00')), /20:00/);
   assert.throws(() => normalizeRoute(mealCity, makeMeal('19:30', '21:30')), /21:00/);
+  assert.equal(normalizeRoute(mealCity, makeMeal('19:30', '21:30'), true)[0].times.A.endTime,'21:30');
+  assert.equal(routeDraft(mealCity)[0].placeIds[0], 'A');
   assert.throws(() => normalizeRoute(mealCity, makeMeal('', '20:00')), /起止时间/);
   assert.throws(() => normalizeRoute(city, [{ dayId: 'sep17', placeIds: ['A','B'], times: { A: {time:'09:00',endTime:'10:00'}, B:{time:'09:30',endTime:'11:00'} } }]), /冲突/);
   const lockedCity = { ...mealCity, days: [{...mealCity.days[0], places:[{...mealCity.days[0].places[0],locked:true,time:'18:00',endTime:'19:00'}]}] };
@@ -122,12 +124,14 @@ async function run() {
   assert.ok(!isBackSwipe(-120,0,400));
   assert.ok(!isBackSwipe(120,80,400));
   assert.ok(!isBackSwipe(35,5,400));
-  assert.ok(!isBackSwipe(120,5,1100));
+  assert.ok(isBackSwipe(120,5,1100));
+  assert.ok(isBackSwipe(70,8,400));
+  assert.ok(!isBackSwipe(70,50,400));
   const manifest = JSON.parse(fs.readFileSync(path.join(root,'public/manifest.webmanifest'),'utf8'));
   const icon = manifest.icons.find(icon => icon.type==='image/png');
   const png = fs.readFileSync(path.join(root,'public',icon.src));
   assert.equal(png.readUInt32BE(16),1024); assert.equal(png.readUInt32BE(20),1024);
-  assert.match(fs.readFileSync(path.join(root,'index.html'),'utf8'),/rel="apple-touch-icon"[^>]*bontrip-travel.png/);
+  assert.match(fs.readFileSync(path.join(root,'index.html'),'utf8'),/rel="apple-touch-icon"[^>]*apple-touch-icon-v22.png/);
   console.log('PASS: right swipe thresholds and rejection cases, cat PNG manifest and Apple touch icon');
   console.log('PASS: empty/length/malformed/schema retries, bounded retry, auth errors, body timeout, dated guide, new trip, original preservation, QR byte-identical JSON export');
 }

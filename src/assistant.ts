@@ -168,7 +168,7 @@ export async function optimizeCity(settings: AssistantSettings, trip: Trip, city
     true, "days",
   );
   const result = jsonFromText(content);
-  return normalizeRoute(city, result.days);
+  return normalizeRoute(city, result.days, true);
 }
 
 export function applyOptimizedDays(city: City, result: OptimizedDay[]): City {

@@ -17,7 +17,7 @@ import { exportTicketsHtml } from "./ticketExport";
 import { tripFromAssistant } from "./assistantTrip";
 import { StickerProvider } from "./Stickers";
 import { applyRecordEdits } from "./assistantEdits";
-import { normalizeRoute } from "./routePlanning";
+import { normalizeRoute, routeDraft } from "./routePlanning";
 import { RouteEditor } from "./RouteEditor";
 import { PlaceEditor } from "./PlaceEditor";
 
@@ -195,19 +195,10 @@ function App() {
     const requestedDate = date ? looseDateToIso(date, trip.startDate) : undefined;
     const days = date ? target.days.filter((day) => (looseDateToIso(day.date, trip.startDate) || day.date) === (requestedDate || date)) : target.days;
     if (!days.some((day) => day.places.length)) return showToast(date ? "这一天还没有地点，请确认日期或先添加行程" : "先添加几个地点吧");
-    setBusy("route");
-    try {
-      setOptimized(await optimizeCity(settings, trip, { ...target, days }));
-      setOptimizedCityId(target.id);
-      setActiveCityId(target.id);
-      setModal("route");
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "旅行助手没有完成这次操作";
-      updateTrip((current) => ({ ...current, chats: [...current.chats, { id: uid("chat"), role: "assistant", content: `没有写入：${message}`, createdAt: new Date().toISOString() }] }));
-      showToast(message);
-    } finally {
-      setBusy("");
-    }
+    setOptimized(routeDraft({ ...target, days }));
+    setOptimizedCityId(target.id);
+    setActiveCityId(target.id);
+    setModal("route");
   }
 
   function acceptOptimization() {

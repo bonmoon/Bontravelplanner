@@ -8,7 +8,7 @@ const root = process.cwd();
 const assetDirectory = resolve(root, "dist/assets");
 const serviceWorkerPath = resolve(root, "dist/sw.js");
 const assets = (await readdir(assetDirectory)).map((name) => `./assets/${name}`).sort();
-const shell = ["./", "./index.html", "./manifest.webmanifest", "./icons/app-icon.svg", ...assets];
+const shell = ["./", "./index.html", "./manifest.webmanifest", "./icons/app-icon.svg", "./icons/apple-touch-icon-v22.png", ...assets];
 const serviceWorker = await readFile(serviceWorkerPath, "utf8");
 const injected = serviceWorker.replace(/const SHELL = \[[^;]+\];/, `const SHELL = ${JSON.stringify(shell)};`);
 await writeFile(serviceWorkerPath, injected);
