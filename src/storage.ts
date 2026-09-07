@@ -28,7 +28,14 @@ export async function loadDocument(): Promise<TravelDocument | null> {
   });
 }
 
-export async function saveDocument(document: TravelDocument): Promise<void> {
+let saveQueue: Promise<void> = Promise.resolve();
+export function saveDocument(document: TravelDocument): Promise<void> {
+  const snapshot = structuredClone(document);
+  const pending = saveQueue.catch(() => {}).then(() => writeDocument(snapshot));
+  saveQueue = pending;
+  return pending;
+}
+async function writeDocument(document: TravelDocument): Promise<void> {
   const db = await openDatabase();
   return new Promise((resolve, reject) => {
     const transaction = db.transaction(STORE, "readwrite");
@@ -38,6 +45,7 @@ export async function saveDocument(document: TravelDocument): Promise<void> {
       resolve();
     };
     transaction.onerror = () => reject(transaction.error);
+    transaction.onabort = () => { db.close(); reject(transaction.error || new Error("本机保存被中断")); };
   });
 }
 

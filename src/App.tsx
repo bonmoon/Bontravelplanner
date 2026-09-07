@@ -24,6 +24,8 @@ import { ExpenseEditor } from "./ExpenseEditor";
 import { membersOf, calculateExpenseShares, money } from "./ledgerEngine";
 import { applyBusinessOperations, expenseFromOperation } from "./assistantBusiness";
 import { PlaceEditor } from "./PlaceEditor";
+import { moveEditedPlace } from "./placeMove";
+import { prepareJournalCommit, verifyJournalCommit } from "./journalCommit";
 
 const navItems: Array<{ id: ViewName; label: string; icon: string; image?: string }> = [
   { id: "home", label: "首页", icon: "⌂", image: "./assets/bontrip-home.png" },
@@ -84,6 +86,8 @@ function App() {
   const [expenseToEdit, setExpenseToEdit] = useState<Expense | undefined>();
   const [pendingOps, setPendingOps] = useState<AssistantOperation[] | null>(null);
   const [pendingTripId, setPendingTripId] = useState("");
+  const [savingJournal, setSavingJournal] = useState(false);
+  const autoSaveTimer = useRef<number | undefined>(undefined);
   const [pendingExpenseIndex, setPendingExpenseIndex] = useState<number | null>(null);
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [editingTicketId, setEditingTicketId] = useState("");
@@ -110,8 +114,8 @@ function App() {
 
   useEffect(() => {
     if (!ready) return;
-    const timer = window.setTimeout(() => saveDocument(document).catch(() => showToast("这次修改还没有保存下来")), 350);
-    return () => window.clearTimeout(timer);
+    autoSaveTimer.current = window.setTimeout(() => saveDocument(document).catch(() => showToast("这次修改还没有保存下来")), 350);
+    return () => window.clearTimeout(autoSaveTimer.current);
   }, [document, ready]);
 
   useEffect(() => {
@@ -477,7 +481,7 @@ function App() {
         if (!current.days.length) return { ...current, days: [{ id: uid("day"), date: "Day 1", weekday: "", title: "抵达与散步", places: [created] }] };
         return { ...current, days: current.days.map((day) => day.id === modalDayId ? { ...day, places: [...day.places, created] } : day) };
       }); setModal("none"); }} />}
-      {placeToEdit && editingPlace && <PlaceEditor key={placeToEdit.id} place={placeToEdit} onClose={() => setEditingPlace(null)} onSave={(edited) => { updateTrip((current) => ({ ...current, cities: current.cities.map((item) => item.id === editingPlace.cityId ? { ...item, days: item.days.map((day) => ({ ...day, places: day.places.map((place) => place.id === edited.id ? edited : place).sort((a,b) => (a.time || "99:99").localeCompare(b.time || "99:99")) })) } : item) })); setEditingPlace(null); showToast("地点已更新"); }} />}
+      {placeToEdit && editingPlace && <PlaceEditor key={placeToEdit.id} place={placeToEdit} days={trip.cities.find(c=>c.id===editingPlace.cityId)?.days || []} onClose={() => setEditingPlace(null)} onSave={(edited, targetDayId) => { updateTrip(current => ({ ...current, cities: current.cities.map(item => item.id === editingPlace.cityId ? moveEditedPlace(item, edited, targetDayId) : item) })); setEditingPlace(null); showToast("地点已保存到所选日期"); }} />}
       {modal === "ticket" && <TicketEditor settings={settings} cityId={city?.id || trip.cities[0]?.id || ""} onClose={() => setModal("none")} onCreate={(created) => { updateTrip((current) => ({ ...current, tickets: [created, ...current.tickets] })); setModal("none"); showToast("票据已经收好了"); }} />}
       {modal === "editTicket" && <TicketEditor settings={settings} initial={trip.tickets.find((item) => item.id === editingTicketId)} cityId={city?.id || trip.cities[0]?.id || ""} onClose={() => setModal("none")} onCreate={(edited) => { updateTrip((current) => ({ ...current, tickets: current.tickets.map((item) => item.id === editingTicketId ? { ...edited, id: item.id } : item) })); setModal("none"); showToast("票据已经更新"); }} />}
       {modal === "expense" && <ExpenseEditor key={expenseToEdit?.id || "new"} trip={trip} cityId={city?.id || ""} initial={expenseToEdit} onClose={()=>{setModal("none");setExpenseToEdit(undefined);setPendingExpenseIndex(null);}} onAssistant={text=>{setModal("none");setChatDraft(text);setAssistantOpen(true);}} onSave={created=>{
@@ -489,10 +493,29 @@ function App() {
         setModal("none");setExpenseToEdit(undefined);showToast(pendingExpenseIndex!==null?"分账草稿已更新，请确认全部修改":"账单已确认，余额已重新计算");
       }} />}
       {modal === "route" && city && <RouteEditor city={trip.cities.find(item => item.id === optimizedCityId) || city} optimized={optimized} onChange={setOptimized} onClose={() => setModal("none")} onAccept={acceptOptimization} onRefine={async message => { const target = trip.cities.find(item => item.id === optimizedCityId) || city; return optimizeCity(settings, trip, { ...target, days: target.days.filter(day => optimized.some(item => item.dayId === day.id)) }, message, optimized); }} />}
-      {pendingOps && modal !== "expense" && <Modal title="确认旅行助手的修改" eyebrow="REVIEW" onClose={()=>setPendingOps(null)} wide><p>确认后才会保存。删除操作会移除对应资料，请仔细核对。</p>{pendingOps.map((op,index)=>{
+      {pendingOps && modal !== "expense" && <Modal title="确认旅行助手的修改" eyebrow="REVIEW" onClose={()=>{if(!savingJournal)setPendingOps(null);}} wide><p>确认后才会保存。删除操作会移除对应资料，请仔细核对。</p>{pendingOps.map((op,index)=>{
         const expense=expenseFromOperation(trip,op,city?.id||"");
-        return <section className="assistant-change" key={index}>{expense?<><h3>{expense.title} · {money(expense.amount,expense.currency)}</h3><p>{membersOf(trip).find(m=>m.id===expense.paidBy)?.name} 付款</p>{calculateExpenseShares(expense,membersOf(trip)).map(p=><p key={p.memberId}>{membersOf(trip).find(m=>m.id===p.memberId)?.name} · {money(p.amount,expense.currency)}</p>)}<button onClick={()=>{setExpenseToEdit(expense);setPendingExpenseIndex(index);setModal("expense");}}>修改这笔分账</button></>:op.type==="add_journal"?<><h3>Journal · {op.journal.title}</h3><small>{trip.cities.find(c=>c.id===op.cityId)?.name} · {op.journal.date}</small><p>{op.journal.text}</p></>:<><h3>{op.type==="delete_record"?"删除记录":op.type==="add_member"?"添加同行人":"旅行资料修改"}</h3><p>{operationSummary(op,trip)}</p></>}</section>;
-      })}<footer className="modal-footer"><button onClick={()=>setPendingOps(null)}>取消</button><button className="primary-button" onClick={()=>{try{if(trip.id!==pendingTripId)throw new Error("旅行已切换，请重新整理");const journalTarget=pendingOps.find(op=>op.type==="add_journal");applyAssistantOperations(pendingOps);if(journalTarget?.type==="add_journal"){setActiveCityId(journalTarget.cityId);setCityDetail(true);setView("trip");}updateTrip(current=>({...current,chats:[...current.chats,{id:uid("chat"),role:"assistant",content:journalTarget?.type==="add_journal"?`已将「${journalTarget.journal.title}」写入对应城市的旅行手记。`:"已确认并保存这次修改。",createdAt:new Date().toISOString()}]}));setPendingOps(null);showToast(journalTarget?.type==="add_journal"?"城市 Journal 已写入":"修改已保存");}catch(e){showToast((e as Error).message);}}}>确认保存</button></footer></Modal>}
+        return <section className="assistant-change" key={index}>{expense?<><h3>{expense.title} · {money(expense.amount,expense.currency)}</h3><p>{membersOf(trip).find(m=>m.id===expense.paidBy)?.name} 付款</p>{calculateExpenseShares(expense,membersOf(trip)).map(p=><p key={p.memberId}>{membersOf(trip).find(m=>m.id===p.memberId)?.name} · {money(p.amount,expense.currency)}</p>)}<button onClick={()=>{setExpenseToEdit(expense);setPendingExpenseIndex(index);setModal("expense");}}>修改这笔分账</button></>:op.type==="add_journal"?<><h3>Journal · {op.journal.title}</h3><label>保存到城市<select aria-label="手记所属城市" value={op.cityId} onChange={e=>setPendingOps(current=>current?.map((item,i)=>i===index?{...op,cityId:e.target.value}:item)||null)}>{trip.cities.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></label><small>{op.journal.date}</small><p>{op.journal.text}</p></>:<><h3>{op.type==="delete_record"?"删除记录":op.type==="add_member"?"添加同行人":"旅行资料修改"}</h3><p>{operationSummary(op,trip)}</p></>}</section>;
+      })}<footer className="modal-footer"><button disabled={savingJournal} onClick={()=>setPendingOps(null)}>取消</button><button className="primary-button" disabled={savingJournal} onClick={async ()=>{
+        try {
+          if(trip.id!==pendingTripId) throw new Error("旅行已切换，请重新整理");
+          const journalsOnly=pendingOps.every(op=>op.type==="add_journal" || (op.type==="edit_record" && op.entity==="journal"));
+          if(journalsOnly){
+            setSavingJournal(true);
+            window.clearTimeout(autoSaveTimer.current);
+            const commit=prepareJournalCommit(document,trip.id,pendingOps);
+            await saveDocument(commit.document);
+            verifyJournalCommit(await loadDocument(),trip.id,commit.targets);
+            setDocument(commit.document);
+            setActiveCityId(commit.targets[0].cityId);setCityDetail(true);setView("trip");setAssistantOpen(false);
+            window.setTimeout(()=>window.document.querySelector(".city-journal")?.scrollIntoView({behavior:"smooth",block:"start"}),100);
+          } else {
+            applyAssistantOperations(pendingOps);
+            updateTrip(current=>({...current,chats:[...current.chats,{id:uid("chat"),role:"assistant",content:"已确认并保存这次修改。",createdAt:new Date().toISOString()}]}));
+          }
+          setPendingOps(null);showToast(journalsOnly?"手记已保存并核对正文":"修改已保存");
+        } catch(e){showToast((e as Error).message);} finally {setSavingJournal(false);}
+      }}>{savingJournal?"正在保存手记…":"确认保存"}</button></footer></Modal>}
       <FloatingAssistant open={assistantOpen} onOpen={() => setAssistantOpen(true)} onClose={() => setAssistantOpen(false)} trip={trip} draft={chatDraft} onDraft={setChatDraft} onSend={sendChat} busy={busy === "chat"} onTicket={() => setModal("ticket")} onExpense={() => setModal("expense")} />
       <div className={`toast ${toast ? "show" : ""}`}>{toast}</div>
     </div></StickerProvider>
@@ -564,7 +587,7 @@ function Sidebar({ view, onView, onNewTrip }: { view: ViewName; onView: (value: 
 }
 
 function MobileNav({ view, onView }: { view: ViewName; onView: (value: ViewName) => void }) {
-  return <nav className="mobile-nav export-hide">{navItems.filter((item) => ["home", "trip", "map", "tickets", "expenses", "assistant"].includes(item.id)).map((item) => <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => onView(item.id)}><i>{item.image ? <img src={item.image} alt="" /> : item.icon}</i><span>{item.label === "我的旅行" ? "行程" : item.label.replace("本", "")}</span></button>)}</nav>;
+  return <nav className="mobile-nav export-hide">{navItems.filter((item) => ["home", "trip", "map", "tickets", "expenses"].includes(item.id)).map((item) => <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => onView(item.id)}><i>{item.image ? <img src={item.image} alt="" /> : item.icon}</i><span>{item.label === "我的旅行" ? "行程" : item.label.replace("本", "")}</span></button>)}</nav>;
 }
 
 function Topbar({ trip, view, onSettings, onExportHtml, onExportPng, busy }: { trip: Trip; view: ViewName; onSettings: () => void; onExportHtml: () => void; onExportPng: () => void; busy: boolean }) {
@@ -623,12 +646,22 @@ function CityJournal({ city, onAdd }: { city: City; onAdd: () => void }) {
 function EmptyDay({ onAdd }: { onAdd: () => void }) { return <div className="empty-state"><span>⌖</span><h3>这座城市还留着一页空白</h3><p>先建第一天，再慢慢把地点和路线串起来。</p><button className="primary-button" onClick={onAdd}>＋ 新建第一天</button></div>; }
 
 function AssistantView({ trip, draft, onDraft, onSend, busy, onOptimize, onExpense }: { trip: Trip; draft: string; onDraft: (value: string) => void; onSend: (event: FormEvent) => void; busy: boolean; onOptimize: () => void; onExpense: () => void }) {
-  return <section className="assistant-page"><header className="assistant-header"><div className="assistant-avatar"><img src="./assets/travel-assistant-avatar.png" alt="" /></div><div><span className="eyebrow">TRIP COMPANION</span><h2>{trip.title}的旅行助手</h2><p>可以从一个模糊念头开始，我们慢慢把它排成路。</p></div></header><div className="assistant-layout"><section className="chat-card"><div className="chat-messages">{trip.chats.map((message) => <article key={message.id} className={message.role}><span>{message.role === "assistant" ? "旅" : "我"}</span><p>{message.content}</p></article>)}{busy && <article className="assistant"><span>旅</span><p>我在翻一翻你的旅行…</p></article>}</div><form onSubmit={onSend}><textarea value={draft} disabled={busy} onChange={(event) => onDraft(event.target.value)} onKeyDown={sendOnEnter} placeholder="想把哪一天排得更松一点？" /><button disabled={busy || !draft.trim()}>➤</button></form></section><aside className="assistant-tools"><button onClick={onOptimize}><span>⌘</span><strong>重新排顺路线</strong><small>保留固定地点</small></button><button onClick={onExpense}><span>▦</span><strong>随手记一笔</strong><small>一句话就够</small></button></aside></div></section>;
+  const messagesRef=useRef<HTMLDivElement>(null);
+  useEffect(()=>{const node=messagesRef.current;if(node)node.scrollTop=node.scrollHeight;},[trip.id,trip.chats.length,busy]);
+  return <section className="assistant-page"><header className="assistant-header"><div className="assistant-avatar"><img src="./assets/travel-assistant-avatar.png" alt="" /></div><div><span className="eyebrow">TRIP COMPANION</span><h2>{trip.title}的旅行助手</h2><p>可以从一个模糊念头开始，我们慢慢把它排成路。</p></div></header><div className="assistant-layout"><section className="chat-card"><div className="chat-messages" ref={messagesRef}>{trip.chats.map((message) => <article key={message.id} className={message.role}><span>{message.role === "assistant" ? "旅" : "我"}</span><p>{message.content}</p></article>)}{busy && <article className="assistant"><span>旅</span><p>我在翻一翻你的旅行…</p></article>}</div><form onSubmit={onSend}><textarea value={draft} disabled={busy} onChange={(event) => onDraft(event.target.value)} onKeyDown={sendOnEnter} placeholder="想把哪一天排得更松一点？" /><button disabled={busy || !draft.trim()}>➤</button></form></section><aside className="assistant-tools"><button onClick={onOptimize}><span>⌘</span><strong>重新排顺路线</strong><small>保留固定地点</small></button><button onClick={onExpense}><span>▦</span><strong>随手记一笔</strong><small>一句话就够</small></button></aside></div></section>;
 }
 
 function FloatingAssistant({ open, onOpen, onClose, trip, draft, onDraft, onSend, busy, onTicket, onExpense }: { open: boolean; onOpen: () => void; onClose: () => void; trip: Trip; draft: string; onDraft: (value: string) => void; onSend: (event: FormEvent) => void; busy: boolean; onTicket: () => void; onExpense: () => void }) {
-  return <aside className={`floating-assistant export-hide ${open ? "open" : ""}`}>
-    {open && <section className="floating-assistant-panel"><header><img src="./assets/travel-assistant-avatar.png" alt="旅行助手 Avatar" /><div><strong>旅行助手</strong><small>DeepSeek · 可以直接修改这趟旅行</small></div><button onClick={onClose} aria-label="收起旅行助手">×</button></header><div className="floating-assistant-messages">{trip.chats.map((message) => <article key={message.id} className={message.role}><span>{message.role === "assistant" ? "旅" : "我"}</span><p>{message.content}</p></article>)}{busy && <article className="assistant"><span>旅</span><p>正在把内容整理进旅行卡…</p></article>}</div><div className="floating-assistant-quick"><button onClick={onTicket}>＋ 票据</button><button onClick={onExpense}>＋ 记账</button><button onClick={() => onDraft("城市：\n日期：\n请把下面的攻略正文整理成行程，保留原有地点，安排建议时间：\n")}>＋ 攻略</button><button onClick={() => onDraft("帮我把当前城市的路线重新排顺并调整建议时间")}>排顺路线</button></div><form onSubmit={onSend}><textarea value={draft} disabled={busy} onChange={(event) => onDraft(event.target.value)} onKeyDown={sendOnEnter} placeholder="粘贴攻略正文，写上城市和日期，例如：维也纳，2026-09-17。整理成当天行程并安排时间…" /><button disabled={busy || !draft.trim()}>➤</button></form></section>}
+  const messagesRef = useRef<HTMLDivElement>(null);
+  const [panelHeight, setPanelHeight] = useState(72);
+  const resizeStart = useRef<{ y: number; height: number } | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    const frame = window.requestAnimationFrame(() => { const node=messagesRef.current; if(node)node.scrollTop=node.scrollHeight; });
+    return () => window.cancelAnimationFrame(frame);
+  }, [open, trip.id, trip.chats.length, busy, panelHeight]);
+  return <aside style={{"--assistant-height":panelHeight+"dvh"} as React.CSSProperties} className={`floating-assistant export-hide ${open ? "open" : ""}`}>
+    {open && <section className="floating-assistant-panel"><button className="assistant-resize-handle" aria-label="拖动调整助手高度，点击切换大小" onPointerDown={e=>{e.currentTarget.setPointerCapture(e.pointerId);resizeStart.current={y:e.clientY,height:panelHeight};}} onPointerMove={e=>{if(resizeStart.current)setPanelHeight(Math.min(94,Math.max(42,resizeStart.current.height+(resizeStart.current.y-e.clientY)/window.innerHeight*100)));}} onPointerUp={e=>{const start=resizeStart.current;resizeStart.current=null;if(start&&Math.abs(start.y-e.clientY)<5)setPanelHeight(panelHeight>80?58:94);}} onPointerCancel={()=>{resizeStart.current=null;}} onKeyDown={e=>{if(e.key==="ArrowUp"||e.key==="ArrowDown"){e.preventDefault();setPanelHeight(h=>Math.min(94,Math.max(42,h+(e.key==="ArrowUp"?10:-10))));}}}><span/></button><header><img src="./assets/travel-assistant-avatar.png" alt="旅行助手 Avatar" /><div><strong>旅行助手</strong><small>DeepSeek · 可以直接修改这趟旅行</small></div><div className="assistant-window-actions"><button className="assistant-size-toggle" onClick={()=>setPanelHeight(panelHeight>80?58:94)} aria-label="切换助手窗口大小">{panelHeight>80?"↙":"↗"}</button><button onClick={onClose} aria-label="收起旅行助手">×</button></div></header><div className="floating-assistant-messages" ref={messagesRef}>{trip.chats.map((message) => <article key={message.id} className={message.role}><span>{message.role === "assistant" ? "旅" : "我"}</span><p>{message.content}</p></article>)}{busy && <article className="assistant"><span>旅</span><p>正在把内容整理进旅行卡…</p></article>}</div><div className="floating-assistant-quick"><button onClick={onTicket}>＋ 票据</button><button onClick={onExpense}>＋ 记账</button><button onClick={() => onDraft("城市：\n日期：\n请把下面的攻略正文整理成行程，保留原有地点，安排建议时间：\n")}>＋ 攻略</button><button onClick={() => onDraft("帮我把当前城市的路线重新排顺并调整建议时间")}>排顺路线</button></div><form onSubmit={onSend}><textarea value={draft} disabled={busy} onChange={(event) => onDraft(event.target.value)} onKeyDown={sendOnEnter} placeholder="粘贴攻略正文，写上城市和日期，例如：维也纳，2026-09-17。整理成当天行程并安排时间…" /><button disabled={busy || !draft.trim()}>➤</button></form></section>}
     <button className="floating-assistant-trigger" onClick={open ? onClose : onOpen} aria-label={open ? "收起旅行助手" : "打开旅行助手"}><img src="./assets/travel-assistant-avatar.png" alt="" /><span>{open ? "×" : "问问旅行助手"}</span></button>
   </aside>;
 }

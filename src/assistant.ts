@@ -282,7 +282,7 @@ export async function commandTrip(settings: AssistantSettings, trip: Trip, messa
     result = jsonFromText(content);
   }
   if (wantsFullPlan && !isRouteRequest() && plannedCount() < 4) throw new Error("模型返回的行程不完整，没有写入数据；请重试或切换模型");
-  const journalWrite = /journal|手记|日记/i.test(message) && /写|放|存|收进|添加|追加|更新|修改|整理|总结|summar|save|add|write/i.test(message) && !/删除/.test(message);
+  const journalWrite = /journal|手记|日记/i.test(message) && /写|放|存|记入|记录|加入|收进|添加|追加|更新|修改|整理|总结|summar|save|add|write/i.test(message) && !/删除/.test(message);
   const journalReady = () => {
     try {
       const ops = result.operations as AssistantOperation[];

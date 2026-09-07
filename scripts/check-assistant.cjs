@@ -35,6 +35,27 @@ function responses(values) {
   };
 }
 async function run() {
+  const journalCommit=load('journalCommit');
+  const journalOperation={type:'add_journal',cityId:'vienna',journal:{title:'出行提醒',date:'2026-09-17',text:'1. 提前确认车次。\n2. 带水。'}};
+  const prepared=journalCommit.prepareJournalCommit({activeTripId:trip.id,trips:[trip]},trip.id,[journalOperation]);
+  journalCommit.verifyJournalCommit(JSON.parse(JSON.stringify(prepared.document)),trip.id,prepared.targets);
+  assert.throws(()=>journalCommit.verifyJournalCommit({trips:[trip]},trip.id,prepared.targets),/没有完整保存/);
+  const journalEdit={type:'edit_record',entity:'journal',id:prepared.targets[0].entry.id,changes:{text:'修改后的正文'}};
+  const editedJournal=journalCommit.prepareJournalCommit(prepared.document,trip.id,[journalEdit]);
+  assert.equal(editedJournal.targets[0].cityId,'vienna');
+  assert.equal(editedJournal.targets[0].entry.text,'修改后的正文');
+  assert.equal(editedJournal.document.trips[0].cities[0].journal.length,1);
+  const {moveEditedPlace}=load('placeMove');
+  const moved=moveEditedPlace({...city,days:[...city.days,{id:'sep18',date:'2026-09-18',places:[]}]},city.days[0].places[0],'sep18');
+  assert.equal(moved.days[0].places.some(p=>p.id==='A'),false);
+  assert.equal(moved.days[1].places[0].image,city.days[0].places[0].image);
+  assert.equal(city.days[0].places.length,2);
+  responses([completion({reply:'已完成',operations:[]}),completion({reply:'已整理',operations:[journalOperation]})]);
+  assert.equal((await commandTrip(settings,trip,'请把注意事项写入维也纳journal')).operations[0].type,'add_journal');
+  responses([completion({reply:'已完成',operations:[]}),completion({reply:'已完成',operations:[]})]);
+  const emptyJournal=await commandTrip(settings,trip,'请记录到journal');
+  assert.equal(emptyJournal.operations.length,0);assert.match(emptyJournal.reply,/没有生成/);
+  console.log('PASS: Journal empty-success retry, saved-text verification, existing Journal update, cross-date move preserves photos');
   const engine=load('ledgerEngine'), business=load('assistantBusiness');
   const people=[{id:'p',name:'Patrick',avatar:'🙂',isMe:true},{id:'a',name:'Alex',avatar:'🙂',isMe:false}];
   const bill=(id,amount,paidBy='p',splitType='equal',participants=[{memberId:'p'},{memberId:'a'}],currency='EUR')=>({id,title:id,date:'2026-09-06',cityId:'vienna',category:'餐饮',amount,currency,paidBy,splitType,participants});
