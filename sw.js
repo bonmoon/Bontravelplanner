@@ -1,5 +1,5 @@
-const CACHE = "travel-card-studio-v25";
-const SHELL = ["./","./index.html","./manifest.webmanifest","./icons/app-icon.svg","./icons/apple-touch-icon-v22.png","./assets/bontrip-food.png","./assets/bontrip-home.png","./assets/bontrip-ledger.png","./assets/bontrip-map.png","./assets/bontrip-travel.png","./assets/breakfast-croissant.png","./assets/index-GzJMkbrv.js","./assets/index-X3GjlUBx.css","./assets/paws-and-passport.mp3","./assets/pdf.worker.min-Dswkl-cV.mjs","./assets/profile-cap.png","./assets/profile-flower.png","./assets/src-kKouVX_d.js","./assets/sticker-smile.png","./assets/ticketFiles-DCgUVFWv.js","./assets/travel-assistant-avatar.png"];
+const CACHE = "travel-card-studio-v26";
+const SHELL = ["./","./index.html","./manifest.webmanifest","./icons/app-icon.svg","./icons/apple-touch-icon-v22.png","./assets/bontrip-food.png","./assets/bontrip-home.png","./assets/bontrip-ledger.png","./assets/bontrip-map.png","./assets/bontrip-travel.png","./assets/breakfast-croissant.png","./assets/index-CJvdYvm6.js","./assets/index-DDg4IJzc.css","./assets/paws-and-passport.mp3","./assets/pdf.worker.min-Dswkl-cV.mjs","./assets/profile-cap.png","./assets/profile-flower.png","./assets/src-DIgPp1E4.js","./assets/sticker-smile.png","./assets/ticketFiles-CgkqkDmH.js","./assets/travel-assistant-avatar.png"];
 const isImage = request => /\.(png|jpe?g|webp|gif|svg)(\?|$)/i.test(request.url);
 const valid = (request, response) => response?.ok && (!isImage(request) || response.headers.get("content-type")?.startsWith("image/"));
 self.addEventListener("install", event => {
