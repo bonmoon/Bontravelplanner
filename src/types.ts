@@ -3,6 +3,7 @@ export type TicketKind = "火车票" | "登机牌" | "酒店" | "门票" | "预�
 export type ExpenseCategory = "交通" | "餐饮" | "住宿" | "门票" | "购物" | "其他";
 
 export interface Place {
+  photoFocus?: Record<string, { x: number; y: number }>;
   id: string;
   name: string;
   mapQuery?: string;
@@ -27,6 +28,7 @@ export interface DayPlan {
 }
 
 export interface JournalEntry {
+  photoFocus?: Record<string, { x: number; y: number }>;
   id: string;
   date: string;
   title: string;
@@ -35,6 +37,7 @@ export interface JournalEntry {
 }
 
 export interface City {
+  photoFocus?: Record<string, { x: number; y: number }>;
   appleGuideUrl?: string;
   dateMode?: "stay" | "days";
   id: string;

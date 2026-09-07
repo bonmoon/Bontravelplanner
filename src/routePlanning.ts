@@ -9,6 +9,25 @@ export interface OptimizedDay {
 }
 const minutes = (text = "") => { const m = text.match(/\b([01]?\d|2[0-3]):([0-5]\d)\b/); return m ? Number(m[1]) * 60 + Number(m[2]) : undefined; };
 const clock = (n: number) => `${Math.floor(n / 60).toString().padStart(2, "0")}:${(n % 60).toString().padStart(2, "0")}`;
+export function reflowDay(city: City, day: OptimizedDay, ids: string[]): OptimizedDay {
+  const original=city.days.find(d=>d.id===day.dayId);
+  if(!original)throw new Error("找不到这一天");
+  const places=new Map(original.places.map(p=>[p.id,p]));
+  const starts=day.placeIds.map(id=>minutes(day.times[id]?.time || places.get(id)?.time)).filter((n):n is number=>n!==undefined);
+  let cursor=starts.length?Math.min(...starts):540;
+  const times:OptimizedDay["times"]={};
+  for(const id of ids){
+    const place=places.get(id);if(!place)throw new Error("地点已变更，请重新打开排序");
+    const old=day.times[id];const a=minutes(old?.time),b=minutes(old?.endTime);
+    const length=a!==undefined&&b!==undefined&&b>a?b-a:duration(place);
+    const start=place.locked?(minutes(place.time)??cursor):cursor;
+    const end=start+(place.locked?duration(place):length);
+    if(end>=1440)throw new Error("当天时间不足，请缩短停留或将部分地点移动到其他日期");
+    if(!place.locked)times[id]={time:clock(start),endTime:clock(end)};
+    cursor=end+20;
+  }
+  return {...day,placeIds:ids,times};
+}
 function duration(place: Place): number {
   const start = minutes(place.time), end = minutes(place.endTime);
   if (start !== undefined && end !== undefined && end > start) return end - start;

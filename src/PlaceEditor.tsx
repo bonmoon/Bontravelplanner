@@ -1,12 +1,16 @@
 import { useState, type FormEvent } from "react";
 import { Modal } from "./components";
+import { PhotoEditor } from "./PhotoEditor";
 import type { Place, DayPlan } from "./types";
 
 export function PlaceEditor({ place, days, onSave, onClose }: { place: Place; days: DayPlan[]; onSave: (place: Place, dayId: string) => void; onClose: () => void }) {
   const [draft, setDraft] = useState(place);
   const [dayId, setDayId] = useState(days.find(d => d.places.some(p => p.id === place.id))?.id || "");
   function submit(event: FormEvent) { event.preventDefault(); onSave(draft, dayId); }
+  const images=[...(draft.image?[draft.image]:[]),...(draft.gallery||[])];
+  const setImages=(values:string[])=>setDraft(current=>({...current,image:values[0],gallery:values.slice(1)}));
   return <Modal title="编辑地点" onClose={onClose}><form className="modal-form" onSubmit={submit}>
+    {images.map((src,index)=><PhotoEditor key={`${index}-${src.slice(-20)}`} src={src} label={`图片 ${index+1}`} focus={draft.photoFocus} onFocus={photoFocus=>setDraft(current=>({...current,photoFocus}))} onReplace={value=>setImages(images.map((image,i)=>i===index?value:image))} onRemove={()=>setImages(images.filter((_,i)=>i!==index))}/>)}
     <label>名称<input required value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} /></label>
     <label>安排日期 · 移动到其他日期<select aria-label="安排日期" value={dayId} onChange={e => setDayId(e.target.value)}>{days.map(day => <option key={day.id} value={day.id}>{day.date} · {day.title}</option>)}</select></label>
     <label>分类<select value={draft.category} onChange={(e) => setDraft({ ...draft, category: e.target.value as Place["category"] })}>{["景点","美食","交通","住宿","购物"].map((name) => <option key={name}>{name}</option>)}</select></label>

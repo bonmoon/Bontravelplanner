@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Modal } from "./components";
-import { normalizeRoute, type OptimizedDay } from "./routePlanning";
+import { normalizeRoute, reflowDay, type OptimizedDay } from "./routePlanning";
 import type { City } from "./types";
 
 export function RouteEditor({ city, optimized, onChange, onClose, onAccept, onRefine }: { city: City; optimized: OptimizedDay[]; onChange: (days: OptimizedDay[]) => void; onClose: () => void; onAccept: () => void; onRefine: (message: string) => Promise<OptimizedDay[]> }) {
@@ -13,7 +13,7 @@ export function RouteEditor({ city, optimized, onChange, onClose, onAccept, onRe
     onChange(optimized.map(day => day.dayId === dayId ? { ...day, times: { ...day.times, [id]: { ...day.times[id], [field]: value } } } : day));
   }
   function move(dayId: string, index: number, delta: number) {
-    onChange(optimized.map(day => { if (day.dayId !== dayId) return day; const ids = [...day.placeIds]; [ids[index], ids[index + delta]] = [ids[index + delta], ids[index]]; return { ...day, placeIds: ids }; }));
+    try { const next=optimized.map(day => { if (day.dayId !== dayId) return day; const ids = [...day.placeIds]; [ids[index], ids[index + delta]] = [ids[index + delta], ids[index]]; return reflowDay(city,day,ids); });setError("");onChange(next); } catch(e){setError((e as Error).message);}
   }
   async function refine(request = message) {
     if (!request.trim() || busy) return;

@@ -95,7 +95,7 @@ async function run() {
   assert.deepEqual(JSON.parse(JSON.stringify(wrote)).members,people);
   console.log('PASS: all five split acceptance cases, penny rounding, currency isolation, refunds, settlements, legacy records, journal writes and schema rejection');
 
-  const { normalizeRoute, routeDraft } = load('routePlanning');
+  const { normalizeRoute, routeDraft, reflowDay } = load('routePlanning');
   const mealCity = { ...city, days: [{ ...city.days[0], places: [{ ...city.days[0].places[0], name: '晚餐' }] }] };
   const makeMeal = (time, endTime) => [{ dayId: 'sep17', placeIds: ['A'], times: { A: { time, endTime } } }];
   assert.equal(normalizeRoute(mealCity, makeMeal('19:00', '20:00'))[0].times.A.time, '19:00');
@@ -103,6 +103,11 @@ async function run() {
   assert.throws(() => normalizeRoute(mealCity, makeMeal('19:30', '21:30')), /21:00/);
   assert.equal(normalizeRoute(mealCity, makeMeal('19:30', '21:30'), true)[0].times.A.endTime,'21:30');
   assert.equal(routeDraft(mealCity)[0].placeIds[0], 'A');
+  const reflowCity={...mealCity,days:[{...mealCity.days[0],places:[...mealCity.days[0].places,{...mealCity.days[0].places[0],id:'B',name:'咖啡',time:'11:00',endTime:'12:00'}]}]};
+  const reflowed=reflowDay(reflowCity,routeDraft(reflowCity)[0],['B','A']);
+  assert.deepEqual(reflowed.placeIds,['B','A']);
+  assert.equal(reflowed.times.B.time,'09:00');
+  assert.equal(reflowed.times.A.time,reflowed.times.B.endTime.replace(/(\d{2}):(\d{2})/,(_,h,m)=>{const n=Number(h)*60+Number(m)+20;return `${String(Math.floor(n/60)).padStart(2,'0')}:${String(n%60).padStart(2,'0')}`;}));
   assert.throws(() => normalizeRoute(mealCity, makeMeal('', '20:00')), /起止时间/);
   assert.throws(() => normalizeRoute(city, [{ dayId: 'sep17', placeIds: ['A','B'], times: { A: {time:'09:00',endTime:'10:00'}, B:{time:'09:30',endTime:'11:00'} } }]), /冲突/);
   const lockedCity = { ...mealCity, days: [{...mealCity.days[0], places:[{...mealCity.days[0].places[0],locked:true,time:'18:00',endTime:'19:00'}]}] };

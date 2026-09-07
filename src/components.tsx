@@ -1,3 +1,4 @@
+import { photoPosition } from "./PhotoEditor";
 import { PhotoOrder } from "./PhotoOrder";
 import { createPortal } from "react-dom";
 import type { City, DayPlan, Place, Ticket } from "./types";
@@ -42,7 +43,7 @@ export function CityCard({ city, tripStartDate, active, onOpen, onCover }: { cit
         <div className="city-counts"><span>{city.days.length} 天</span><span>景点 {placeCount}</span><span>Journal {city.journal?.length || 0}</span></div>
       </div>
       <div className={`city-cover-art ${city.cover ? "has-image" : ""}`} aria-hidden="true">
-        {city.cover ? <img src={city.cover} alt={`${city.name}封面`} /> : <span>{city.name.slice(0, 1)}</span>}
+        {city.cover ? <img src={city.cover} style={{objectPosition:photoPosition(city.cover,city.photoFocus)}} alt={`${city.name}封面`} /> : <span>{city.name.slice(0, 1)}</span>}
       </div>
     </article>
   );
@@ -107,10 +108,11 @@ export function PlaceRow({
             {!!place.highlights.length && <div className="highlight-list">{place.highlights.map((item) => <span key={item}>{item}</span>)}</div>}
           </div>
           <div className={`place-media ${place.image ? "has-image" : ""} ${place.gallery?.length ? "has-gallery" : ""} gallery-${Math.min(6, place.gallery?.length || 0)}`}>
-            {place.image ? <img className="place-hero-image" src={place.image} alt={`${place.name}图片`} /> : <div className={`place-media-empty category-${place.category}`}><span>{categoryIcon[place.category]}</span><small>给这一站加一张大图</small></div>}
-            {!!place.gallery?.length && <div className="place-gallery">{place.gallery.map((image, galleryIndex) => <img key={`${place.id}-${galleryIndex}`} src={image} alt={`${place.name}补充图片 ${galleryIndex + 1}`} />)}</div>}
+            {place.image ? <img className="place-hero-image" style={{objectPosition:photoPosition(place.image,place.photoFocus)}} src={place.image} alt={`${place.name}图片`} /> : <div className={`place-media-empty category-${place.category}`}><span>{categoryIcon[place.category]}</span><small>给这一站加一张大图</small></div>}
+            {!!place.gallery?.length && <div className="place-gallery">{place.gallery.map((image, galleryIndex) => <img key={`${place.id}-${galleryIndex}`} style={{objectPosition:photoPosition(image,place.photoFocus)}} src={image} alt={`${place.name}补充图片 ${galleryIndex + 1}`} />)}</div>}
             <label className={`place-media-add ${place.image ? "icon-only" : ""}`} title={place.image ? "添加更多图片" : "添加图片"}><span aria-hidden="true">＋</span>{!place.image && <b>添加图片</b>}<input type="file" accept="image/*" multiple onChange={(event) => { const files = Array.from(event.target.files || []); if (files.length) onImages(files); event.target.value = ""; }} /></label>
           </div>
+          {(place.image || place.gallery?.length) && <button className="text-button photo-manage export-hide" onClick={()=>window.dispatchEvent(new CustomEvent("travel-place-edit",{detail:{cityId:city.id,placeId:place.id}}))}>✎ 编辑图片 · 取景 / 删除</button>}
           {!!place.gallery?.length && <PhotoOrder images={[...(place.image ? [place.image] : []), ...place.gallery]} onChange={onReorder} />}
         </div>
         <div className="place-actions export-hide">

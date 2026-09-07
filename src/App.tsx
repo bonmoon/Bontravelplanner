@@ -23,6 +23,7 @@ import { LedgerView } from "./LedgerView";
 import { ExpenseEditor } from "./ExpenseEditor";
 import { membersOf, calculateExpenseShares, money } from "./ledgerEngine";
 import { applyBusinessOperations, expenseFromOperation } from "./assistantBusiness";
+import { PhotoEditor, photoPosition, type PhotoFocus } from "./PhotoEditor";
 import { PlaceEditor } from "./PlaceEditor";
 import { moveEditedPlace } from "./placeMove";
 import { prepareJournalCommit, verifyJournalCommit } from "./journalCommit";
@@ -91,6 +92,7 @@ function App() {
   const [pendingExpenseIndex, setPendingExpenseIndex] = useState<number | null>(null);
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [editingTicketId, setEditingTicketId] = useState("");
+  const [editingJournalId,setEditingJournalId]=useState("");
   const [editingPlace, setEditingPlace] = useState<{ cityId: string; placeId: string } | null>(null);
   const exportRef = useRef<HTMLDivElement>(null);
   const importRef = useRef<HTMLInputElement>(null);
@@ -126,10 +128,12 @@ function App() {
   useEffect(() => {
     const edit = (event: Event) => setEditingPlace((event as CustomEvent<{ cityId: string; placeId: string }>).detail);
     const closeMenus = (event: Event) => window.document.querySelectorAll<HTMLDetailsElement>(".place-actions details[open]").forEach((menu) => { if (event.type === "keydown" ? (event as globalThis.KeyboardEvent).key === "Escape" : !menu.contains(event.target as Node)) menu.open = false; });
+    const editJournal=(event:Event)=>{const value=(event as CustomEvent<{cityId:string;id:string}>).detail;setActiveCityId(value.cityId);setEditingJournalId(value.id);setModal("journal");};
+    window.addEventListener("travel-journal-edit",editJournal);
     window.addEventListener("travel-place-edit", edit);
     window.document.addEventListener("pointerdown", closeMenus);
     window.document.addEventListener("keydown", closeMenus);
-    return () => { window.removeEventListener("travel-place-edit", edit); window.document.removeEventListener("pointerdown", closeMenus); window.document.removeEventListener("keydown", closeMenus); };
+    return () => { window.removeEventListener("travel-journal-edit",editJournal);window.removeEventListener("travel-place-edit", edit); window.document.removeEventListener("pointerdown", closeMenus); window.document.removeEventListener("keydown", closeMenus); };
   }, []);
 
 
@@ -450,7 +454,7 @@ function App() {
               onPlaceImage={setPlaceImages}
               onReorderImages={(dayId, placeId, images) => updateCity(current => ({ ...current, days: current.days.map(day => day.id === dayId ? { ...day, places: day.places.map(place => place.id === placeId ? { ...place, image: images[0], gallery: images.slice(1) } : place) } : day) }))}
               onNewCity={() => setModal("city")}
-              onNewJournal={() => setModal("journal")}
+              onNewJournal={() => {setEditingJournalId("");setModal("journal");}}
               onNewDay={() => updateCity((current) => ({ ...current, days: [...current.days, { id: uid("day"), date: `Day ${current.days.length + 1}`, weekday: "", title: "新的一天", places: [] }] }))}
               onRemoveDay={(dayId) => { if (window.confirm("删除这一天？当天的地点也会一起移除。")) updateTrip((current) => { const cities = current.cities.map((item) => item.id === city.id ? syncCityDatesFromDays({ ...item, days: item.days.filter((day) => day.id !== dayId) }, current.startDate) : item); return { ...current, cities: sortCitiesByDate(cities, current.startDate) }; }); }}
               onNewPlace={(dayId) => { setModalDayId(dayId); setModal("place"); }}
@@ -475,8 +479,8 @@ function App() {
       <input ref={bulkImportRef} className="hidden" type="file" accept=".zip,application/zip" onChange={(event) => event.target.files?.[0] && void importBulkPackage(event.target.files[0])} />
       {modal === "trip" && <NewTripModal onClose={() => setModal("none")} onCreate={(created) => { setDocument((current) => ({ ...current, trips: [created, ...current.trips], activeTripId: created.id })); setActiveCityId(created.cities[0].id); setView("trip"); setModal("none"); }} />}
       {modal === "city" && <NewCityModal tripStartDate={trip.startDate} onClose={() => setModal("none")} onCreate={(created) => { updateTrip((current) => ({ ...current, cities: sortCitiesByDate([...current.cities, created], current.startDate) })); setActiveCityId(created.id); setModal("none"); }} />}
-      {modal === "editCity" && city && <NewCityModal tripStartDate={trip.startDate} initial={city} onClose={() => setModal("none")} onCreate={(edited) => { updateTrip((current) => ({ ...current, cities: sortCitiesByDate(current.cities.map((item) => item.id === city.id ? { ...edited, id: city.id, cover: city.cover, days: city.days } : item), current.startDate) })); setModal("none"); showToast("城市卡已经按日期更新顺序"); }} />}
-      {modal === "journal" && city && <JournalModal city={city} onClose={() => setModal("none")} onCreate={(entry) => { updateCity((current) => ({ ...current, journal: [entry, ...(current.journal || [])] })); setModal("none"); showToast("这篇城市 Journal 已经收好了"); }} />}
+      {modal === "editCity" && city && <NewCityModal tripStartDate={trip.startDate} initial={city} onClose={() => setModal("none")} onCreate={(edited) => { updateTrip((current) => ({ ...current, cities: sortCitiesByDate(current.cities.map((item) => item.id === city.id ? { ...edited, id: city.id, days: city.days } : item), current.startDate) })); setModal("none"); showToast("城市卡已经按日期更新顺序"); }} />}
+      {modal === "journal" && city && <JournalModal key={editingJournalId||"new"} initial={city.journal?.find(j=>j.id===editingJournalId)} city={city} onClose={() => {setEditingJournalId("");setModal("none");}} onCreate={(entry) => { updateCity((current) => ({ ...current, journal: current.journal?.some(j=>j.id===entry.id)?current.journal.map(j=>j.id===entry.id?entry:j):[entry, ...(current.journal || [])] })); setModal("none"); showToast("这篇城市 Journal 已经收好了"); }} />}
       {modal === "place" && city && <NewPlaceModal onClose={() => setModal("none")} onCreate={(created) => { updateCity((current) => {
         if (!current.days.length) return { ...current, days: [{ id: uid("day"), date: "Day 1", weekday: "", title: "抵达与散步", places: [created] }] };
         return { ...current, days: current.days.map((day) => day.id === modalDayId ? { ...day, places: [...day.places, created] } : day) };
@@ -639,7 +643,7 @@ function CityJournal({ city, onAdd }: { city: City; onAdd: () => void }) {
   const entries = city.journal || [];
   return <section className={`city-journal ${entries.length ? "has-entries" : "is-empty"}`}>
     <header><div><span className="eyebrow">CITY JOURNAL</span><h3>{city.name}的旅行手记</h3></div><button className="text-button export-hide" onClick={onAdd}>＋ 写一篇</button></header>
-    {entries.length ? <div className="journal-grid">{entries.map((entry) => { const images = Array.isArray(entry.images) ? entry.images : []; return <article key={entry.id}>{images.length ? <div className={`journal-images count-${Math.min(3, images.length)}`}>{images.slice(0, 3).map((image, index) => <img key={`${entry.id}-${index}`} src={image} alt={`${entry.title}照片 ${index + 1}`} />)}</div> : <div className="journal-image-empty">JOURNAL</div>}<div className="journal-copy"><time>{entry.date}</time><h4>{entry.title}</h4><p>{entry.text}</p></div></article>; })}</div> : <button className="journal-empty-card export-hide" onClick={onAdd}><span>＋</span><strong>挑几张今天最有代表性的照片</strong><small>把一天写成一页杂志式城市手记</small></button>}
+    {entries.length ? <div className="journal-grid">{entries.map((entry) => { const images = Array.isArray(entry.images) ? entry.images : []; return <article key={entry.id}>{images.length ? <div className={`journal-images count-${Math.min(3, images.length)}`}>{images.slice(0, 3).map((image, index) => <img key={`${entry.id}-${index}`} style={{objectPosition:photoPosition(image,entry.photoFocus)}} src={image} alt={`${entry.title}照片 ${index + 1}`} />)}</div> : <div className="journal-image-empty">JOURNAL</div>}<div className="journal-copy"><button className="text-button journal-edit export-hide" onClick={()=>window.dispatchEvent(new CustomEvent("travel-journal-edit",{detail:{cityId:city.id,id:entry.id}}))}>✎ 编辑手记</button><time>{entry.date}</time><h4>{entry.title}</h4><p>{entry.text}</p></div></article>; })}</div> : <button className="journal-empty-card export-hide" onClick={onAdd}><span>＋</span><strong>挑几张今天最有代表性的照片</strong><small>把一天写成一页杂志式城市手记</small></button>}
   </section>;
 }
 
@@ -692,10 +696,12 @@ function NewTripModal({ onClose, onCreate }: { onClose: () => void; onCreate: (t
 }
 
 function NewCityModal({ initial, tripStartDate, onClose, onCreate }: { initial?: City; tripStartDate: string; onClose: () => void; onCreate: (city: City) => void }) {
+  const [cover,setCover]=useState(initial?.cover);
+  const [photoFocus,setPhotoFocus]=useState<PhotoFocus>(initial?.photoFocus||{});
   const defaultStart = initial?.startDate || looseDateToIso(initial?.dates || "", tripStartDate, 0);
   const defaultEnd = initial?.endDate || looseDateToIso(initial?.dates || "", tripStartDate, 1) || defaultStart;
-  function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const data = new FormData(event.currentTarget); const startDate = String(data.get("startDate") || ""); const endDate = String(data.get("endDate") || startDate); const city: City = { ...initial, dateMode: "stay", id: initial?.id || uid("city"), name: String(data.get("name")), englishName: String(data.get("english") || "New city"), country: String(data.get("country") || ""), startDate, endDate, dates: cityDateRange(startDate, endDate), note: String(data.get("note") || "在这里留一点空白给偶遇。"), color: String(data.get("color") || "#e7dfc9"), cover: initial?.cover, journal: initial?.journal || [], days: initial?.days || [{ id: uid("day"), date: startDate || "Day 1", weekday: "", title: "抵达与散步", places: [] }] }; onCreate(city); }
-  return <Modal title={initial ? "编辑城市卡" : "添加一座城市"} eyebrow={initial ? "EDIT STOP" : "NEXT STOP"} onClose={onClose}><form className="modal-form" onSubmit={submit}><div className="form-row"><label><span>城市</span><input name="name" required placeholder="维也纳" defaultValue={initial?.name} /></label><label><span>英文名 / 当地名称</span><input name="english" placeholder="Vienna / Wien" defaultValue={initial?.englishName} /></label></div><label><span>国家 / 地区（用于限定地图搜索）</span><input name="country" placeholder="Austria" defaultValue={initial?.country} /></label><div className="form-row"><label><span>到达日期</span><input name="startDate" type="date" required defaultValue={defaultStart} /></label><label><span>离开日期</span><input name="endDate" type="date" defaultValue={defaultEnd} /></label></div><label><span>城市小记</span><textarea name="note" placeholder="想在这座城市留下什么？" defaultValue={initial?.note} /></label><label><span>卡片颜色</span><input name="color" type="color" defaultValue={initial?.color || "#e7dfc9"} /></label><footer><button type="button" onClick={onClose}>取消</button><button className="primary-button">{initial ? "保存并重排" : "放进旅程"}</button></footer></form></Modal>;
+  function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const data = new FormData(event.currentTarget); const startDate = String(data.get("startDate") || ""); const endDate = String(data.get("endDate") || startDate); const city: City = { ...initial, dateMode: "stay", id: initial?.id || uid("city"), name: String(data.get("name")), englishName: String(data.get("english") || "New city"), country: String(data.get("country") || ""), startDate, endDate, dates: cityDateRange(startDate, endDate), note: String(data.get("note") || "在这里留一点空白给偶遇。"), color: String(data.get("color") || "#e7dfc9"), cover, photoFocus, journal: initial?.journal || [], days: initial?.days || [{ id: uid("day"), date: startDate || "Day 1", weekday: "", title: "抵达与散步", places: [] }] }; onCreate(city); }
+  return <Modal title={initial ? "编辑城市卡" : "添加一座城市"} eyebrow={initial ? "EDIT STOP" : "NEXT STOP"} onClose={onClose}><form className="modal-form" onSubmit={submit}>{cover&&<PhotoEditor src={cover} label="城市封面" focus={photoFocus} onFocus={setPhotoFocus} onReplace={setCover} onRemove={()=>setCover(undefined)}/>}<div className="form-row"><label><span>城市</span><input name="name" required placeholder="维也纳" defaultValue={initial?.name} /></label><label><span>英文名 / 当地名称</span><input name="english" placeholder="Vienna / Wien" defaultValue={initial?.englishName} /></label></div><label><span>国家 / 地区（用于限定地图搜索）</span><input name="country" placeholder="Austria" defaultValue={initial?.country} /></label><div className="form-row"><label><span>到达日期</span><input name="startDate" type="date" required defaultValue={defaultStart} /></label><label><span>离开日期</span><input name="endDate" type="date" defaultValue={defaultEnd} /></label></div><label><span>城市小记</span><textarea name="note" placeholder="想在这座城市留下什么？" defaultValue={initial?.note} /></label><label><span>卡片颜色</span><input name="color" type="color" defaultValue={initial?.color || "#e7dfc9"} /></label><footer><button type="button" onClick={onClose}>取消</button><button className="primary-button">{initial ? "保存并重排" : "放进旅程"}</button></footer></form></Modal>;
 }
 
 function NewPlaceModal({ onClose, onCreate }: { onClose: () => void; onCreate: (place: Place) => void }) {
@@ -719,11 +725,12 @@ function MultiImagePicker({ values, label, onChange }: { values: string[]; label
   </div>;
 }
 
-function JournalModal({ city, onClose, onCreate }: { city: City; onClose: () => void; onCreate: (entry: JournalEntry) => void }) {
-  const [images, setImages] = useState<string[]>([]);
+function JournalModal({ city, initial, onClose, onCreate }: { city: City; initial?: JournalEntry; onClose: () => void; onCreate: (entry: JournalEntry) => void }) {
+  const [images, setImages] = useState<string[]>(initial?.images||[]);
+  const [photoFocus,setPhotoFocus]=useState<PhotoFocus>(initial?.photoFocus||{});
   const defaultDate = city.days.at(-1)?.date.match(/^\d{4}-\d{2}-\d{2}$/) ? city.days.at(-1)!.date : city.startDate || "";
-  function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const data = new FormData(event.currentTarget); onCreate({ id: uid("journal"), date: String(data.get("date") || defaultDate || "旅途中"), title: String(data.get("title") || `${city.name}的一天`), text: String(data.get("text") || ""), images }); }
-  return <Modal title={`写一页 ${city.name} Journal`} eyebrow="CITY JOURNAL" onClose={onClose} wide><form className="modal-form journal-form" onSubmit={submit}><MultiImagePicker values={images} label="标志性照片" onChange={setImages} /><div className="form-row"><label><span>日期</span><input name="date" type="date" defaultValue={defaultDate} /></label><label><span>这一页的标题</span><input name="title" required placeholder="雨后的老城与一杯咖啡" /></label></div><label><span>今天想留下什么？</span><textarea name="text" required placeholder="写下走过的街道、意外遇见的人，或者这一刻最想记住的气味。" /></label><footer><button type="button" onClick={onClose}>取消</button><button className="primary-button">收进城市 Journal</button></footer></form></Modal>;
+  function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const data = new FormData(event.currentTarget); onCreate({ ...initial, photoFocus, id: initial?.id||uid("journal"), date: String(data.get("date") || defaultDate || "旅途中"), title: String(data.get("title") || `${city.name}的一天`), text: String(data.get("text") || ""), images }); }
+  return <Modal title={`${initial?"编辑":"写一页"} ${city.name} Journal`} eyebrow="CITY JOURNAL" onClose={onClose} wide><form className="modal-form journal-form" onSubmit={submit}>{images.map((src,index)=><PhotoEditor key={`${index}-${src.slice(-20)}`} src={src} label={`手记图片 ${index+1}`} focus={photoFocus} onFocus={setPhotoFocus} onReplace={value=>setImages(values=>values.map((image,i)=>i===index?value:image))} onRemove={()=>setImages(values=>values.filter((_,i)=>i!==index))}/>)}<MultiImagePicker values={images} label="标志性照片" onChange={setImages} /><div className="form-row"><label><span>日期</span><input name="date" type="date" defaultValue={initial?.date||defaultDate} /></label><label><span>这一页的标题</span><input name="title" required defaultValue={initial?.title} placeholder="雨后的老城与一杯咖啡" /></label></div><label><span>今天想留下什么？</span><textarea name="text" required defaultValue={initial?.text} placeholder="写下走过的街道、意外遇见的人，或者这一刻最想记住的气味。" /></label><footer><button type="button" onClick={onClose}>取消</button><button className="primary-button">收进城市 Journal</button></footer></form></Modal>;
 }
 
 export default App;
